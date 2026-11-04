@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.env*
+!.env.example
+.cache/
+data/
+data_synth/
+results/
+runs/*
+!runs/evidence/
+runs/evidence/*
+!runs/evidence/trajectory.jsonl
+*.egg-info/
