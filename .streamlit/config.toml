@@ -1,13 +1,13 @@
 [theme]
-base = "light"
-primaryColor = "#1f6875"
-backgroundColor = "#fbfaf7"
-secondaryBackgroundColor = "#f2f1eb"
-textColor = "#182126"
+base = "dark"
+primaryColor = "#9b93ff"
+backgroundColor = "#080d18"
+secondaryBackgroundColor = "#101827"
+textColor = "#f1f5ff"
 font = "sans serif"
 
 [server]
-maxUploadSize = 20
+maxUploadSize = 100
 
 [browser]
 gatherUsageStats = false
