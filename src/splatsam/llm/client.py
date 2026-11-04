@@ -293,6 +293,8 @@ class ModelClient:
         charged_cost = reserved_cost
         try:
             response = self._openai().responses.create(**payload)
+            if getattr(response, "status", None) != "completed":
+                raise StructuredOutputError("model response did not complete")
             raw = getattr(response, "output_text", "")
             if not isinstance(raw, str) or not raw.strip():
                 raise ValueError("completed response contained no text")
