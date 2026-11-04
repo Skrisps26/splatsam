@@ -1,4 +1,5 @@
 """Video frame sampling for perception, with source-frame timing preserved."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -25,7 +26,7 @@ def video_info(video_path: Path) -> tuple[int, float]:
     if not capture.isOpened():
         raise ValueError(f"cannot open video: {video_path}")
     try:
-        count = int(round(capture.get(cv2.CAP_PROP_FRAME_COUNT)))
+        count = round(capture.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = float(capture.get(cv2.CAP_PROP_FPS))
     finally:
         capture.release()

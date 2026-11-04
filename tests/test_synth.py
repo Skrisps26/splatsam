@@ -6,9 +6,8 @@ from pathlib import Path
 import imageio.v3 as iio
 import numpy as np
 
-from splatsam.llm.schemas import MaskTrack, ObjectList, SceneSpec
-from splatsam.synth import generate, vertical_cylinder_fixture
-
+from splatsam.llm.schemas import MaskTrack, SceneSpec
+from splatsam.synth import generate
 
 EXPECTED_IDS = ("paper", "remote_1", "remote_2", "ball", "marker_1", "marker_2")
 
@@ -17,24 +16,20 @@ def test_synthetic_metadata_is_deterministic_and_truth_is_separate(tmp_path: Pat
     first = generate(tmp_path, seed=17)
     artifact_paths = {key: Path(value) for key, value in first.items()}
 
-    metadata_before = {
-        key: path.read_bytes()
-        for key, path in artifact_paths.items()
-        if key != "video_path"
-    }
+    metadata_before = {key: path.read_bytes() for key, path in artifact_paths.items() if key != "video_path"}
     second = generate(tmp_path, seed=17)
     assert first == second
     for key, original in metadata_before.items():
         assert Path(second[key]).read_bytes() == original
 
-    scene = SceneSpec.model_validate_json(artifact_paths["scene_path"].read_text())
-
 
 def test_synthetic_tracks_align_to_saved_rgb_and_binary_masks(tmp_path: Path):
     artifacts = generate(tmp_path, seed=42)
-    tracks = [MaskTrack.model_validate(value) for value in json.loads(Path(artifacts["tracks_path"]).read_text())]
-    truth=SceneSpec.model_validate_json(Path(artifacts["scene_path"]).read_text())
-    colors={o.id:np.array(o.rgba[:3]) for o in truth.objects}
+    tracks = [
+        MaskTrack.model_validate(value) for value in json.loads(Path(artifacts["tracks_path"]).read_text())
+    ]
+    truth = SceneSpec.model_validate_json(Path(artifacts["scene_path"]).read_text())
+    colors = {o.id: np.array(o.rgba[:3]) for o in truth.objects}
     assert [track.id for track in tracks] == list(EXPECTED_IDS)
 
     for track in tracks:
@@ -49,9 +44,7 @@ def test_synthetic_tracks_align_to_saved_rgb_and_binary_masks(tmp_path: Path):
             assert frame.box == (float(xs.min()), float(ys.min()), float(xs.max() + 1), float(ys.max() + 1))
             # The pixels at the recorded centroid are rendered object/sheet
             # pixels, not an accidental all-zero or hand-only segmentation.
-            assert mask[int(round(frame.centroid[1])), int(round(frame.centroid[0]))] == 255
-            color=rgb[int(round(frame.centroid[1])),int(round(frame.centroid[0]))].astype(float)
-            expected=colors[track.id]
-            assert np.dot(color,expected)/(np.linalg.norm(color)*np.linalg.norm(expected))>.9
-
-
+            assert mask[round(frame.centroid[1]), round(frame.centroid[0])] == 255
+            color = rgb[round(frame.centroid[1]), round(frame.centroid[0])].astype(float)
+            expected = colors[track.id]
+            assert np.dot(color, expected) / (np.linalg.norm(color) * np.linalg.norm(expected)) > 0.9

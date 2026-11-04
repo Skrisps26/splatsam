@@ -12,7 +12,18 @@ A4 paper defines an image-to-table-plane metric homography. Masks become native 
 Training seeds are 0–9999, validation 10000–19999, test 900000+. Concrete frozen sets use 150/100/200 episodes. Validation selects edits using paired scenarios, at least 2 percentage points mean gain, a positive 10th-percentile paired bootstrap and failure-mode regression guard. Validation is consequently optimistic. A hash-verified one-shot final evaluator measures baseline and final on the sealed test set with Wilson 95% success intervals and a paired gain interval.
 
 ## Evidence status
-Phase A is synthetic, CPU-only and offline except a separately gated small API format spike. Real-video results are not available before Phase B. No numerical improvement is claimed until measured artifacts exist; if no edit qualifies, report no improvement found.
+Phase A ran the complete synthetic video → tracked-mask replay → metric primitives → physics → tuning → sealed evaluation pipeline on local CPU. Model proposals and masks were explicitly mocked; these numbers do not demonstrate live Meta API performance or real-video reconstruction.
+
+| Sealed synthetic outcome | Success | Wilson 95% interval |
+| --- | --- | --- |
+| Simple default settings | 69/200 (34.5%) | 28.26–41.32% |
+| Validation-selected parameters | 95/200 (47.5%) | 40.69–54.40% |
+
+The paired improvement was 13.0 percentage points, with a paired bootstrap 95% interval of 8.5–17.5 points. Six proposed edits were evaluated; three were accepted before three consecutive rejections stopped tuning. There were 1,200 validation planner/scenario evaluations, including 700 fresh simulations and repeated use of the same 100 validation seeds. Neither validation nor synthetic results establish generalization to another workspace.
+
+Paper-derived scale error was 0.251%; maximum planar-size error was 8.13%. Per-object footprint IoU ranged from 0.901 to 0.991. Both planners had 65/200 instability failures: collision/contact fidelity remains a material limitation, not a result to hide.
+
+The cached report, source/overlay video, actual simulation replay and sanitized trajectory are included in the public demo bundle. Meta and GPU spend are both USD 0. The required live synthetic API-format spike remains blocked because MODEL_API_KEY is absent. No real video, real seal, real final evaluation or GPU job has run. Phase B remains explicitly gated.
 
 ## Limits
 Simulation only. The hand floats; there is no arm, reachability model or inverse kinematics. This is parameter tuning of a rule-based planner, not neural-policy training. No real-robot transfer is claimed. Object heights and hidden-side geometry are estimated. Mass and friction are estimates unless measured. Bird-eye IoU validates footprint appearance only—not height, mass, friction or collision geometry. Paper curl, object height and camera tilt imply scale uncertainty of a few percent. Results are specific to the captured scene. A local hash seal prevents accidental leakage/tampering, not a malicious repository owner.

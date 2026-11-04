@@ -1,4 +1,5 @@
 """Held-out evaluation summaries and paired confidence intervals."""
+
 from __future__ import annotations
 
 from collections import Counter
@@ -51,7 +52,9 @@ def _paired_successes(
     if set(baseline_keys) != set(final_by_key):
         raise ValueError("baseline and final results must cover identical scenarios")
     old = np.asarray([result.success for result in baseline], dtype=float)
-    new = np.asarray([final_by_key[(result.seed, result.target_id)].success for result in baseline], dtype=float)
+    new = np.asarray(
+        [final_by_key[(result.seed, result.target_id)].success for result in baseline], dtype=float
+    )
     return old, new
 
 

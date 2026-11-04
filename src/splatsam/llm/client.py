@@ -1,4 +1,5 @@
 """Budgeted, cacheable Meta Responses transport with safe local evidence."""
+
 from __future__ import annotations
 
 import base64
@@ -126,6 +127,7 @@ def _retry_wait(retry_state: Any) -> float:
         raise LiveDispatchUnavailable("Retry-After exceeds bounded request window")
     return max(delay, retry_after)
 
+
 def _retryable(error: BaseException) -> bool:
     code = _status_code(error)
     return code == 429 or (code is not None and 500 <= code < 600)
@@ -142,20 +144,27 @@ def _file_or_value_digest(value: Any) -> Any:
             header, _, encoded = value.partition(",")
             try:
                 payload = base64.b64decode(encoded, validate=True)
-                return {"data_media_type": header.split(";", 1)[0], "sha256": hashlib.sha256(payload).hexdigest(), "bytes": len(payload)}
+                return {
+                    "data_media_type": header.split(";", 1)[0],
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                    "bytes": len(payload),
+                }
             except ValueError:
                 pass
         return {"text_sha256": hashlib.sha256(value.encode()).hexdigest(), "characters": len(value)}
     if isinstance(value, BaseModel):
         return _file_or_value_digest(value.model_dump(mode="json"))
     if isinstance(value, dict):
-        return {str(key): _file_or_value_digest(item) for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))}
+        return {
+            str(key): _file_or_value_digest(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
     if isinstance(value, (list, tuple)):
         return [_file_or_value_digest(item) for item in value]
     return value
 
 
-def _default_for(schema: type[T]) -> T:
+def _default_for[T: BaseModel](schema: type[T]) -> T:
     """Typed bounded offline outputs; they are marked fallback, never live evidence."""
     if schema is ObjectList:
         return schema.model_validate(
@@ -188,7 +197,7 @@ def _default_for(schema: type[T]) -> T:
         raise LiveDispatchUnavailable(f"No typed offline default for {schema.__name__}") from error
 
 
-def _parse_model_response(schema: type[T], raw: str) -> T:
+def _parse_model_response[T: BaseModel](schema: type[T], raw: str) -> T:
     """Translate strict wire-only null patch fields back to the domain model."""
     if schema is PlannerPatch:
         try:
@@ -235,7 +244,20 @@ class ModelClient:
             )
         return self._client
 
-    def _trajectory(self, *, provenance: str, stage: str, model: str, request: Any, response: Any = None, usage: dict[str, int] | None = None, cost: Decimal | None = None, reserved_cost: Decimal | None = None, latency_s: float | None = None, error: BaseException | None = None) -> None:
+    def _trajectory(
+        self,
+        *,
+        provenance: str,
+        stage: str,
+        model: str,
+        request: Any,
+        response: Any = None,
+        usage: dict[str, int] | None = None,
+        cost: Decimal | None = None,
+        reserved_cost: Decimal | None = None,
+        latency_s: float | None = None,
+        error: BaseException | None = None,
+    ) -> None:
         self.last_provenance = provenance
         row: dict[str, Any] = {
             "provenance": provenance,
@@ -243,8 +265,8 @@ class ModelClient:
             "model": model,
             "request": _file_or_value_digest(request),
             "usage": usage or {},
-            "cost_usd": str(cost or Decimal("0")),
-            "reserved_cost_usd": str(reserved_cost or Decimal("0")),
+            "cost_usd": str(cost or Decimal(0)),
+            "reserved_cost_usd": str(reserved_cost or Decimal(0)),
         }
         if response is not None:
             row["response"] = _file_or_value_digest(response)
@@ -259,7 +281,9 @@ class ModelClient:
     def _price(model: str, input_tokens: int, output_tokens: int) -> Decimal:
         prices = config().get("prices", {})
         rate = prices.get(model) or prices.get("muse-wonder-1.0", {"input": 4, "output": 20})
-        return (_safe_decimal(rate["input"]) * input_tokens + _safe_decimal(rate["output"]) * output_tokens) / Decimal(1_000_000)
+        return (
+            _safe_decimal(rate["input"]) * input_tokens + _safe_decimal(rate["output"]) * output_tokens
+        ) / Decimal(1_000_000)
 
     def _preflight_tokens(self, payload: dict[str, Any]) -> int:
         if not self.can_dispatch:
@@ -272,19 +296,37 @@ class ModelClient:
         started = time.monotonic()
         try:
             with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
-                response = client.post(f"{META_BASE_URL}/responses/input_tokens", headers=headers, json=payload)
+                response = client.post(
+                    f"{META_BASE_URL}/responses/input_tokens", headers=headers, json=payload
+                )
                 response.raise_for_status()
                 tokens = response.json().get("input_tokens")
                 if not isinstance(tokens, int) or tokens < 0:
                     return MAX_INPUT_FALLBACK_TOKENS
                 self.cache.set(f"input_tokens:{key}", tokens)
-                self._trajectory(provenance="live_preflight", stage="token_count", model=payload["model"], request=payload, response={"input_tokens": tokens}, latency_s=time.monotonic()-started)
+                self._trajectory(
+                    provenance="live_preflight",
+                    stage="token_count",
+                    model=payload["model"],
+                    request=payload,
+                    response={"input_tokens": tokens},
+                    latency_s=time.monotonic() - started,
+                )
                 return tokens
         except httpx.HTTPError as error:
-            self._trajectory(provenance="preflight_error", stage="token_count", model=payload["model"], request=payload, error=error, latency_s=time.monotonic()-started)
+            self._trajectory(
+                provenance="preflight_error",
+                stage="token_count",
+                model=payload["model"],
+                request=payload,
+                error=error,
+                latency_s=time.monotonic() - started,
+            )
             return MAX_INPUT_FALLBACK_TOKENS
 
-    def _dispatch_json(self, *, payload: dict[str, Any], schema: type[T], model: str, stage: str, attempt_kind: str) -> T:
+    def _dispatch_json(
+        self, *, payload: dict[str, Any], schema: type[T], model: str, stage: str, attempt_kind: str
+    ) -> T:
         input_tokens = self._preflight_tokens(payload)
         reserved_cost = self._price(model, input_tokens, MAX_OUTPUT_TOKENS)
         reservation = self.budget.reserve(model, input_tokens=input_tokens, output_tokens=MAX_OUTPUT_TOKENS)
@@ -310,22 +352,51 @@ class ModelClient:
             charged_cost = cost
             reservation_closed = True
             self.budget.settle(reservation, cost)
-            self._trajectory(provenance="live", stage=stage, model=model, request=payload, response=parsed, usage=usage, cost=cost, reserved_cost=reserved_cost, latency_s=time.monotonic() - started)
+            self._trajectory(
+                provenance="live",
+                stage=stage,
+                model=model,
+                request=payload,
+                response=parsed,
+                usage=usage,
+                cost=cost,
+                reserved_cost=reserved_cost,
+                latency_s=time.monotonic() - started,
+            )
             return parsed
         except Exception as error:
             if not reservation_closed:
                 self.budget.settle(reservation)
-            self._trajectory(provenance="live_error", stage=stage, model=model, request=payload, usage={"preflight_input_tokens": input_tokens}, cost=charged_cost, reserved_cost=reserved_cost, latency_s=time.monotonic() - started, error=error)
+            self._trajectory(
+                provenance="live_error",
+                stage=stage,
+                model=model,
+                request=payload,
+                usage={"preflight_input_tokens": input_tokens},
+                cost=charged_cost,
+                reserved_cost=reserved_cost,
+                latency_s=time.monotonic() - started,
+                error=error,
+            )
             raise
 
-    def _live_json(self, *, payload: dict[str, Any], schema: type[T], model: str, stage: str, attempt_kind: str) -> T:
+    def _live_json(
+        self, *, payload: dict[str, Any], schema: type[T], model: str, stage: str, attempt_kind: str
+    ) -> T:
         retrying = Retrying(
             retry=retry_if_exception(_retryable),
             stop=stop_after_attempt(3),
             wait=_retry_wait,
             reraise=True,
         )
-        return retrying(self._dispatch_json, payload=payload, schema=schema, model=model, stage=stage, attempt_kind=attempt_kind)
+        return retrying(
+            self._dispatch_json,
+            payload=payload,
+            schema=schema,
+            model=model,
+            stage=stage,
+            attempt_kind=attempt_kind,
+        )
 
     def generate(self, schema: type[T], *, model: str, instructions: str, input: list | str, stage: str) -> T:
         output_schema = normalized_json_schema(schema)
@@ -334,7 +405,14 @@ class ModelClient:
             "instructions": instructions,
             "input": input,
             "max_output_tokens": MAX_OUTPUT_TOKENS,
-            "text": {"format": {"type": "json_schema", "name": schema.__name__.lower(), "schema": output_schema, "strict": True}},
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": schema.__name__.lower(),
+                    "schema": output_schema,
+                    "strict": True,
+                }
+            },
         }
         key = hashlib.sha256(canonical(_file_or_value_digest(payload)).encode()).hexdigest()
         cached = self.cache.get(f"response:{key}")
@@ -344,28 +422,47 @@ class ModelClient:
             except ValidationError:
                 self.cache.delete(f"response:{key}")
             else:
-                self._trajectory(provenance="cache", stage=stage, model=model, request=payload, response=result)
+                self._trajectory(
+                    provenance="cache", stage=stage, model=model, request=payload, response=result
+                )
                 return result
         if not self.can_dispatch:
             result = _default_for(schema)
-            self._trajectory(provenance="fallback", stage=stage, model=model, request=payload, response=result)
+            self._trajectory(
+                provenance="fallback", stage=stage, model=model, request=payload, response=result
+            )
             return result
         live_success = False
         try:
-            result = self._live_json(payload=payload, schema=schema, model=model, stage=stage, attempt_kind="initial")
+            result = self._live_json(
+                payload=payload, schema=schema, model=model, stage=stage, attempt_kind="initial"
+            )
             live_success = True
         except (ValidationError, StructuredOutputError):
             correction = dict(payload)
-            correction["instructions"] = f"{instructions}\nReturn valid JSON matching the supplied schema exactly; no prose."
+            correction["instructions"] = (
+                f"{instructions}\nReturn valid JSON matching the supplied schema exactly; no prose."
+            )
             try:
-                result = self._live_json(payload=correction, schema=schema, model=model, stage=stage, attempt_kind="correction")
+                result = self._live_json(
+                    payload=correction, schema=schema, model=model, stage=stage, attempt_kind="correction"
+                )
                 live_success = True
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - correction failure must return typed, logged fallback
                 result = _default_for(schema)
-                self._trajectory(provenance="fallback", stage=stage, model=model, request=payload, response=result, error=error)
-        except Exception as error:
+                self._trajectory(
+                    provenance="fallback",
+                    stage=stage,
+                    model=model,
+                    request=payload,
+                    response=result,
+                    error=error,
+                )
+        except Exception as error:  # noqa: BLE001 - transport boundary records fallback provenance
             result = _default_for(schema)
-            self._trajectory(provenance="fallback", stage=stage, model=model, request=payload, response=result, error=error)
+            self._trajectory(
+                provenance="fallback", stage=stage, model=model, request=payload, response=result, error=error
+            )
         if live_success:
             self.cache.set(f"response:{key}", result.model_dump(mode="json"))
         return result
@@ -388,10 +485,24 @@ class ModelClient:
             if not isinstance(file_id, str) or not file_id:
                 raise ValueError("Meta Files upload returned no file ID")
             self.cache.set(key, file_id)
-            self._trajectory(provenance="live", stage="sam_upload", model="sam-3.1", request={"video": path}, response={"file_id": file_id}, latency_s=time.monotonic() - started)
+            self._trajectory(
+                provenance="live",
+                stage="sam_upload",
+                model="sam-3.1",
+                request={"video": path},
+                response={"file_id": file_id},
+                latency_s=time.monotonic() - started,
+            )
             return file_id
         except Exception as error:
-            self._trajectory(provenance="live_error", stage="sam_upload", model="sam-3.1", request={"video": path}, latency_s=time.monotonic() - started, error=error)
+            self._trajectory(
+                provenance="live_error",
+                stage="sam_upload",
+                model="sam-3.1",
+                request={"video": path},
+                latency_s=time.monotonic() - started,
+                error=error,
+            )
             raise
 
     @staticmethod
@@ -414,7 +525,14 @@ class ModelClient:
         object_id = int(box_prompt.get("object_id", 1))
         return build_object_prompt(
             size=(int(size[0]), int(size[1])),
-            objects=[PromptObject(id=object_id, prompts=[FramePrompt(frame=frame, box=PromptBox(int(left), int(top), int(right), int(bottom)))])],
+            objects=[
+                PromptObject(
+                    id=object_id,
+                    prompts=[
+                        FramePrompt(frame=frame, box=PromptBox(int(left), int(top), int(right), int(bottom)))
+                    ],
+                )
+            ],
         )
 
     def sam_request(self, path: Path, phrase: str, box_prompt: Any = None) -> dict[str, Any]:
@@ -424,7 +542,11 @@ class ModelClient:
         path = Path(path).resolve()
         frames = max(50, self._video_frames(path))
         prompt = self._box_text(box_prompt) if box_prompt is not None else phrase.strip()
-        sam_key = hashlib.sha256(canonical(_file_or_value_digest({"video": path, "phrase": phrase, "box_prompt": box_prompt})).encode()).hexdigest()
+        sam_key = hashlib.sha256(
+            canonical(
+                _file_or_value_digest({"video": path, "phrase": phrase, "box_prompt": box_prompt})
+            ).encode()
+        ).hexdigest()
         cached = self.cache.get(f"sam:{sam_key}")
         if isinstance(cached, dict) and isinstance(cached.get("output_text"), str):
             from meta_sam_parser import CompletedOutcome, video_segmentation_format
@@ -433,7 +555,14 @@ class ModelClient:
             parser.push(cached["output_text"])
             result = dict(cached)
             result["parsed"] = parser.finish(CompletedOutcome()).result
-            self._trajectory(provenance="cache", stage="sam", model="sam-3.1", request={"video": path, "phrase": phrase, "box_prompt": box_prompt}, response={"output_sha256": hashlib.sha256(cached["output_text"].encode()).hexdigest()}, usage=cached.get("usage", {}))
+            self._trajectory(
+                provenance="cache",
+                stage="sam",
+                model="sam-3.1",
+                request={"video": path, "phrase": phrase, "box_prompt": box_prompt},
+                response={"output_sha256": hashlib.sha256(cached["output_text"].encode()).hexdigest()},
+                usage=cached.get("usage", {}),
+            )
             return result
         file_id = self.upload_video(path)
 
@@ -444,7 +573,19 @@ class ModelClient:
             started = time.monotonic()
             reservation_closed = False
             charged_cost = reserved_cost
-            payload = {"model": "sam-3.1", "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": prompt}, {"type": "input_video", "file_id": file_id}]}]}
+            payload = {
+                "model": "sam-3.1",
+                "input": [
+                    {
+                        "type": "message",
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": prompt},
+                            {"type": "input_video", "file_id": file_id},
+                        ],
+                    }
+                ],
+            }
             try:
                 from meta_sam_parser import CompletedOutcome, video_segmentation_format
 
@@ -462,7 +603,9 @@ class ModelClient:
                                 chunks.append(delta)
                                 parser.push(delta)
                         if getattr(event, "type", None) == "response.completed":
-                            completed = getattr(getattr(event, "response", None), "status", None) == "completed"
+                            completed = (
+                                getattr(getattr(event, "response", None), "status", None) == "completed"
+                            )
                             response = getattr(event, "response", None)
                             usage = {
                                 "input_tokens": _usage_value(response, "input_tokens"),
@@ -480,20 +623,48 @@ class ModelClient:
                 charged_cost = cost
                 reservation_closed = True
                 self.budget.settle(reservation, cost)
-                result = {"output_text": raw, "parsed": parsed, "usage": usage, "frames_billed": billed_frames}
-                self.cache.set(f"sam:{sam_key}", {"output_text": raw, "usage": usage, "frames_billed": billed_frames})
-                self._trajectory(provenance="live", stage="sam", model="sam-3.1", request=payload | {"video": path}, response={"output_sha256": hashlib.sha256(raw.encode()).hexdigest()}, usage=usage, cost=cost, reserved_cost=reserved_cost, latency_s=time.monotonic() - started)
+                result = {
+                    "output_text": raw,
+                    "parsed": parsed,
+                    "usage": usage,
+                    "frames_billed": billed_frames,
+                }
+                self.cache.set(
+                    f"sam:{sam_key}", {"output_text": raw, "usage": usage, "frames_billed": billed_frames}
+                )
+                self._trajectory(
+                    provenance="live",
+                    stage="sam",
+                    model="sam-3.1",
+                    request=payload | {"video": path},
+                    response={"output_sha256": hashlib.sha256(raw.encode()).hexdigest()},
+                    usage=usage,
+                    cost=cost,
+                    reserved_cost=reserved_cost,
+                    latency_s=time.monotonic() - started,
+                )
                 return result
             except Exception as error:
                 if not reservation_closed:
                     self.budget.settle(reservation)
-                self._trajectory(provenance="live_error", stage="sam", model="sam-3.1", request=payload | {"video": path}, cost=charged_cost, reserved_cost=reserved_cost, latency_s=time.monotonic() - started, error=error)
+                self._trajectory(
+                    provenance="live_error",
+                    stage="sam",
+                    model="sam-3.1",
+                    request=payload | {"video": path},
+                    cost=charged_cost,
+                    reserved_cost=reserved_cost,
+                    latency_s=time.monotonic() - started,
+                    error=error,
+                )
                 if _status_code(error) == 404:
                     self.cache.delete(f"upload:{file_digest(path)}")
                     file_id = self.upload_video(path)
                 raise
 
-        retrying = Retrying(retry=retry_if_exception(_retryable), stop=stop_after_attempt(3), wait=_retry_wait, reraise=True)
+        retrying = Retrying(
+            retry=retry_if_exception(_retryable), stop=stop_after_attempt(3), wait=_retry_wait, reraise=True
+        )
         try:
             return retrying(request_once)
         except Exception as error:

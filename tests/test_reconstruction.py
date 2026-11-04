@@ -10,7 +10,6 @@ from splatsam.llm.schemas import MaskFrame, MaskTrack, ObjectInfo, ObjectList
 from splatsam.perception.reference import ReferenceResult
 from splatsam.recon import reconstruct
 
-
 _SIZE = (240, 320)
 
 
@@ -37,10 +36,17 @@ def _track(tmp_path: Path, identifier: str, mask: np.ndarray, *, index: int = 7)
         timestamp_s=float(index),
         mask_path=str(path),
         centroid=(float(xs.mean()), float(ys.mean())),
-        area=int(len(xs)),
+        area=len(xs),
         box=(float(xs.min()), float(ys.min()), float(xs.max() + 1), float(ys.max() + 1)),
     )
-    return MaskTrack(id=identifier, name=identifier.replace("_", " "), frames=[frame], image_width=_SIZE[1], image_height=_SIZE[0], total_frames=8)
+    return MaskTrack(
+        id=identifier,
+        name=identifier.replace("_", " "),
+        frames=[frame],
+        image_width=_SIZE[1],
+        image_height=_SIZE[0],
+        total_frames=8,
+    )
 
 
 def _rectangle(x: int, y: int, width: int, height: int) -> np.ndarray:
@@ -67,9 +73,15 @@ def test_analytic_masks_classify_primitives_and_dimension_gates(tmp_path: Path) 
         objects=[
             ObjectInfo(id="box", name="plastic box", material_guess="plastic", approx_size_cm=(6, 3, 2)),
             ObjectInfo(id="sphere", name="rubber ball", material_guess="rubber", approx_size_cm=(4, 4, 4)),
-            ObjectInfo(id="cylinder", name="upright cylinder", material_guess="plastic", approx_size_cm=(4, 4, 8)),
-            ObjectInfo(id="marker", name="thin marker", material_guess="plastic", approx_size_cm=(9, 1.2, 1.6)),
-            ObjectInfo(id="tiny", name="tiny plastic square", material_guess="plastic", approx_size_cm=(1, 1, 1)),
+            ObjectInfo(
+                id="cylinder", name="upright cylinder", material_guess="plastic", approx_size_cm=(4, 4, 8)
+            ),
+            ObjectInfo(
+                id="marker", name="thin marker", material_guess="plastic", approx_size_cm=(9, 1.2, 1.6)
+            ),
+            ObjectInfo(
+                id="tiny", name="tiny plastic square", material_guess="plastic", approx_size_cm=(1, 1, 1)
+            ),
         ]
     )
 
@@ -120,13 +132,20 @@ def test_measured_values_override_independently_and_invalid_values_fall_back(tmp
 """
     )
 
-    result = {item.id: item for item in reconstruct([box, invalid], objects, _reference(), measured_path=measured).objects}
+    result = {
+        item.id: item
+        for item in reconstruct([box, invalid], objects, _reference(), measured_path=measured).objects
+    }
     valid = result["box"]
     fallback = result["invalid"]
     assert valid.size[2] == 0.021  # explicit height takes priority over size_m.
     assert valid.size[0] < 0.06 and valid.size[1] < 0.04  # planar dimensions stay mask-derived.
     assert valid.mass == 0.123 and valid.friction == 0.77
-    assert (valid.height_source, valid.mass_source, valid.friction_source) == ("measured", "measured", "measured")
+    assert (valid.height_source, valid.mass_source, valid.friction_source) == (
+        "measured",
+        "measured",
+        "measured",
+    )
     assert fallback.size[2] == 0.02
     assert fallback.mass_source == "estimate" and fallback.friction_source == "estimate"
     assert "invalid_measured_height_m" in fallback.reconstruction_source
@@ -151,7 +170,7 @@ def test_reference_alias_is_static_thin_paper_and_nearest_source_mask_is_used(tm
                     timestamp_s=8.0,
                     mask_path=str(path),
                     centroid=(float(xs.mean()), float(ys.mean())),
-                    area=int(len(xs)),
+                    area=len(xs),
                     box=(float(xs.min()), float(ys.min()), float(xs.max() + 1), float(ys.max() + 1)),
                 )
             ]
@@ -159,7 +178,9 @@ def test_reference_alias_is_static_thin_paper_and_nearest_source_mask_is_used(tm
     )
     scene = reconstruct(
         [track],
-        ObjectList(objects=[ObjectInfo(id="reference", name="paper", approx_size_cm=(21, 29.7, 3), graspable=True)]),
+        ObjectList(
+            objects=[ObjectInfo(id="reference", name="paper", approx_size_cm=(21, 29.7, 3), graspable=True)]
+        ),
         _reference(),
     )
     paper = scene.objects[0]

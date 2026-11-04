@@ -3,19 +3,20 @@
 Remote meshes are transport artifacts only.  The caller must explicitly choose a
 metric-fitted mesh before it can affect simulation geometry.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import io
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
-from diskcache import Cache
 
 import cv2
 import httpx
 import numpy as np
 import trimesh
+from diskcache import Cache
 
 from splatsam.llm.schemas import ObjectSpec
 
@@ -84,7 +85,12 @@ def validate_glb(payload: bytes) -> None:
         faces = np.asarray(mesh.faces)
         if vertices.ndim != 2 or vertices.shape[1] != 3 or faces.ndim != 2 or faces.shape[1] != 3:
             raise ReconstructionError("response GLB has invalid mesh arrays")
-        if len(vertices) == 0 or len(faces) == 0 or not np.isfinite(vertices).all() or not np.isfinite(faces).all():
+        if (
+            len(vertices) == 0
+            or len(faces) == 0
+            or not np.isfinite(vertices).all()
+            or not np.isfinite(faces).all()
+        ):
             raise ReconstructionError("response GLB has empty or non-finite mesh")
         if not np.issubdtype(faces.dtype, np.integer):
             raise ReconstructionError("response GLB face indices are not integers")
@@ -198,16 +204,28 @@ class RemoteSam3dReconstructor:
     def _key(self, image: np.ndarray, mask: np.ndarray) -> str:
         digest = hashlib.sha256()
         digest.update(b"splatsam-remote-glb-v2\0")
-        for value in (self.model, self.backend, str(self.allow_stub), str(image.shape), str(image.dtype), str(mask.shape), str(mask.dtype)):
-            digest.update(value.encode("utf-8")); digest.update(b"\0")
-        digest.update(image.tobytes()); digest.update(mask.tobytes())
+        for value in (
+            self.model,
+            self.backend,
+            str(self.allow_stub),
+            str(image.shape),
+            str(image.dtype),
+            str(mask.shape),
+            str(mask.dtype),
+        ):
+            digest.update(value.encode("utf-8"))
+            digest.update(b"\0")
+        digest.update(image.tobytes())
+        digest.update(mask.tobytes())
         return digest.hexdigest()
-
 
     def _fallback(self, image: np.ndarray, mask: np.ndarray, reason: str) -> bytes:
         result = self.fallback.reconstruct(image, mask)
         self.last_provenance = ReconstructionProvenance(
-            source="fallback", backend="primitive", detail=reason, simulation_eligible=False,
+            source="fallback",
+            backend="primitive",
+            detail=reason,
+            simulation_eligible=False,
             scale_source=self.fallback.last_provenance.scale_source,
         )
         return result
@@ -226,7 +244,9 @@ class RemoteSam3dReconstructor:
             except (KeyError, TypeError, ReconstructionError):
                 self.cache.delete(key)
             else:
-                self.last_provenance = ReconstructionProvenance("cache", cached["backend"], simulation_eligible=False)
+                self.last_provenance = ReconstructionProvenance(
+                    "cache", cached["backend"], simulation_eligible=False
+                )
                 return payload
         try:
             ok_image, encoded_image = cv2.imencode(".png", cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
@@ -247,21 +267,33 @@ class RemoteSam3dReconstructor:
             if response.status_code != 200:
                 raise ReconstructionError(f"remote status {response.status_code}")
             remote_backend = response.headers.get("X-Splatsam-Reconstruction-Backend", "")
-            fake = remote_backend == "stub" or response.headers.get("X-Splatsam-Reconstruction-Fake", "").lower() == "true"
+            fake = (
+                remote_backend == "stub"
+                or response.headers.get("X-Splatsam-Reconstruction-Fake", "").lower() == "true"
+            )
             if fake and not self.allow_stub:
                 raise ReconstructionError("stub backend is not permitted for remote reconstruction")
-            if not remote_backend or (remote_backend != self.backend and not (remote_backend == "stub" and self.allow_stub)):
+            if not remote_backend or (
+                remote_backend != self.backend and not (remote_backend == "stub" and self.allow_stub)
+            ):
                 raise ReconstructionError(f"unexpected remote backend {remote_backend!r}")
             payload = response.content
             validate_glb(payload)
         except (httpx.HTTPError, OSError, ReconstructionError, cv2.error) as error:
             return self._fallback(rgb, binary, str(error))
         self.cache.set(key, {"payload": payload, "backend": remote_backend, "fake": fake})
-        self.last_provenance = ReconstructionProvenance("remote", remote_backend or self.backend, simulation_eligible=False)
+        self.last_provenance = ReconstructionProvenance(
+            "remote", remote_backend or self.backend, simulation_eligible=False
+        )
         return payload
 
 
 __all__ = [
-    "PrimitiveReconstructor", "ReconstructionError", "ReconstructionProvenance", "Reconstructor",
-    "RemoteSam3dReconstructor", "StubReconstructor", "validate_glb",
+    "PrimitiveReconstructor",
+    "ReconstructionError",
+    "ReconstructionProvenance",
+    "Reconstructor",
+    "RemoteSam3dReconstructor",
+    "StubReconstructor",
+    "validate_glb",
 ]

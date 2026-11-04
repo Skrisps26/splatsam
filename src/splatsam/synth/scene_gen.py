@@ -4,6 +4,7 @@ The artifact set deliberately keeps metric truth in ``ground_truth.json`` and
 ``scene.json``.  The SAM fixture sees only per-frame binary masks and semantic
 size priors in ``object_list.json``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -19,7 +20,7 @@ from splatsam.llm.schemas import MaskFrame, MaskTrack, ObjectInfo, ObjectList, O
 from splatsam.sim.scene import body_name, build_model
 from splatsam.utils import save_json
 
-import mujoco
+import mujoco  # isort: skip
 
 
 FPS = 15
@@ -217,7 +218,9 @@ def _camera(step: int, seed: int) -> tuple[mujoco.MjvCamera, dict[str, Any]]:
     }
 
 
-def _render(renderer: mujoco.Renderer, data: mujoco.MjData, camera: mujoco.MjvCamera, option: mujoco.MjvOption) -> tuple[np.ndarray, np.ndarray]:
+def _render(
+    renderer: mujoco.Renderer, data: mujoco.MjData, camera: mujoco.MjvCamera, option: mujoco.MjvOption
+) -> tuple[np.ndarray, np.ndarray]:
     """Render RGB and raw MuJoCo ``(geom_id, object_type)`` segmentation."""
     renderer.update_scene(data, camera=camera, scene_option=option)
     rgb = renderer.render().copy()
@@ -232,7 +235,9 @@ def _render(renderer: mujoco.Renderer, data: mujoco.MjData, camera: mujoco.MjvCa
     return rgb, segmentation
 
 
-def _masks_from_segmentation(model: mujoco.MjModel, segmentation: np.ndarray, ids: tuple[str, ...]) -> dict[str, np.ndarray]:
+def _masks_from_segmentation(
+    model: mujoco.MjModel, segmentation: np.ndarray, ids: tuple[str, ...]
+) -> dict[str, np.ndarray]:
     """Union mjOBJ_GEOM pixels by body, retaining an explicit -1 background."""
     geom_pixels = segmentation[..., 1] == int(mujoco.mjtObj.mjOBJ_GEOM)
     geom_ids = segmentation[..., 0]
@@ -262,7 +267,7 @@ def _frame_record(identifier: str, frame_index: int, mask_path: Path, mask: np.n
         timestamp_s=frame_index / FPS,
         mask_path=str(mask_path.resolve()),
         centroid=(float(xs.mean()), float(ys.mean())),
-        area=int(len(xs)),
+        area=len(xs),
         # Half-open pixel bounds are consistent with later box-prompt conversion.
         box=(float(xs.min()), float(ys.min()), float(xs.max() + 1), float(ys.max() + 1)),
     )
@@ -273,12 +278,40 @@ def _semantic_objects() -> ObjectList:
     return ObjectList(
         source="synthetic",
         objects=[
-            ObjectInfo(id="paper", name="white reference sheet", material_guess="paper", approx_size_cm=(21.0, 29.7, 0.1), graspable=False),
-            ObjectInfo(id="remote_1", name="plastic remote", material_guess="plastic", approx_size_cm=(15.5, 4.8, 2.5)),
-            ObjectInfo(id="remote_2", name="plastic remote", material_guess="plastic", approx_size_cm=(15.5, 4.8, 2.5)),
-            ObjectInfo(id="ball", name="rubber ball", material_guess="rubber", approx_size_cm=(5.1, 5.1, 5.1)),
-            ObjectInfo(id="marker_1", name="plastic marker", material_guess="plastic", approx_size_cm=(13.8, 1.7, 1.6)),
-            ObjectInfo(id="marker_2", name="plastic marker", material_guess="plastic", approx_size_cm=(13.8, 1.7, 1.6)),
+            ObjectInfo(
+                id="paper",
+                name="white reference sheet",
+                material_guess="paper",
+                approx_size_cm=(21.0, 29.7, 0.1),
+                graspable=False,
+            ),
+            ObjectInfo(
+                id="remote_1",
+                name="plastic remote",
+                material_guess="plastic",
+                approx_size_cm=(15.5, 4.8, 2.5),
+            ),
+            ObjectInfo(
+                id="remote_2",
+                name="plastic remote",
+                material_guess="plastic",
+                approx_size_cm=(15.5, 4.8, 2.5),
+            ),
+            ObjectInfo(
+                id="ball", name="rubber ball", material_guess="rubber", approx_size_cm=(5.1, 5.1, 5.1)
+            ),
+            ObjectInfo(
+                id="marker_1",
+                name="plastic marker",
+                material_guess="plastic",
+                approx_size_cm=(13.8, 1.7, 1.6),
+            ),
+            ObjectInfo(
+                id="marker_2",
+                name="plastic marker",
+                material_guess="plastic",
+                approx_size_cm=(13.8, 1.7, 1.6),
+            ),
         ],
     )
 

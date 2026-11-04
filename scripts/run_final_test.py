@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 """One-shot sealed final evaluation; root mode is inferred, never flag-selected."""
+
 from __future__ import annotations
 
 import argparse
@@ -32,8 +33,12 @@ def _load_inputs(run_dir: Path) -> tuple[SceneSpec, ScenarioFamily, PlannerParam
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", required=True, type=Path, help="sealed data root (data_synth/... or authorized data/...)")
-    parser.add_argument("--run-dir", required=True, type=Path, help="directory holding frozen scene/family/parameter JSON")
+    parser.add_argument(
+        "--root", required=True, type=Path, help="sealed data root (data_synth/... or authorized data/...)"
+    )
+    parser.add_argument(
+        "--run-dir", required=True, type=Path, help="directory holding frozen scene/family/parameter JSON"
+    )
     parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
     if args.workers < 1:
@@ -43,8 +48,14 @@ def main() -> int:
     result = run_final(scene, family, baseline, final, args.root, args.run_dir, workers=args.workers)
     root = args.root.resolve()
     real_data = (ROOT / "data").resolve()
-    result_root = ROOT / "results" if root == real_data or root.is_relative_to(real_data) else root / "results"
-    print(json.dumps({"result": str(result_root / "final_test.json"), "seal_hash": result["seal_hash"]}, sort_keys=True))
+    result_root = (
+        ROOT / "results" if root == real_data or root.is_relative_to(real_data) else root / "results"
+    )
+    print(
+        json.dumps(
+            {"result": str(result_root / "final_test.json"), "seal_hash": result["seal_hash"]}, sort_keys=True
+        )
+    )
     return 0
 
 

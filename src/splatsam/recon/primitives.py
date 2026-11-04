@@ -1,4 +1,5 @@
 """Truth-independent primitive reconstruction from metric mask footprints."""
+
 from __future__ import annotations
 
 import colorsys
@@ -15,7 +16,6 @@ import yaml
 from splatsam.llm.schemas import MaskTrack, ObjectInfo, ObjectList, ObjectSpec, SceneSpec
 from splatsam.perception.reference import ReferenceResult
 from splatsam.utils import config
-
 
 MATERIAL_ESTIMATES: dict[str, tuple[float, float]] = {
     "plastic": (1050.0, 0.5),
@@ -95,7 +95,10 @@ def _working_mask(track: MaskTrack, reference: ReferenceResult) -> np.ndarray | 
     """Use an actual source-frame mask nearest to the reference frame index."""
     if not track.frames:
         return None
-    frame = min(track.frames, key=lambda item: (abs(item.frame_index - reference.working_frame_index), item.frame_index))
+    frame = min(
+        track.frames,
+        key=lambda item: (abs(item.frame_index - reference.working_frame_index), item.frame_index),
+    )
     try:
         mask = _read_mask(frame.mask_path)
         warped = reference.warp_mask(mask.astype(np.uint8))
@@ -104,7 +107,9 @@ def _working_mask(track: MaskTrack, reference: ReferenceResult) -> np.ndarray | 
     return warped if np.any(warped) else None
 
 
-def _contour_geometry(mask: np.ndarray, meters_per_pixel: float) -> tuple[float, float, float, float, float, float] | None:
+def _contour_geometry(
+    mask: np.ndarray, meters_per_pixel: float
+) -> tuple[float, float, float, float, float, float] | None:
     """Return centre, long/short footprint axes, yaw, and circularity from the largest contour."""
     found = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     contours = found[-2]
@@ -262,7 +267,9 @@ def reconstruct(
         if is_reference:
             semantic_height = 0.001
         else:
-            semantic_height = _positive_number(semantic.approx_size_cm[2] / 100.0) if semantic is not None else None
+            semantic_height = (
+                _positive_number(semantic.approx_size_cm[2] / 100.0) if semantic is not None else None
+            )
             semantic_height = semantic_height if semantic_height is not None else 0.02
         entry = measured.get(track.id)
         if entry is None:
@@ -281,7 +288,9 @@ def reconstruct(
                 shape = "sphere"
             else:
                 shape = "cylinder"
-            chosen_diameter = measured_height if shape == "sphere" and measured_height is not None else diameter
+            chosen_diameter = (
+                measured_height if shape == "sphere" and measured_height is not None else diameter
+            )
             size = (chosen_diameter, chosen_diameter, chosen_diameter if shape == "sphere" else height)
             yaw = 0.0
         elif aspect > 3.0 and max(short_axis, height) <= 0.03:
@@ -295,7 +304,9 @@ def reconstruct(
             shape = "box"
             size = (long_axis, short_axis, height)
 
-        density, estimated_friction = MATERIAL_ESTIMATES.get(material, (_DEFAULT_DENSITY_KG_M3, _DEFAULT_FRICTION))
+        density, estimated_friction = MATERIAL_ESTIMATES.get(
+            material, (_DEFAULT_DENSITY_KG_M3, _DEFAULT_FRICTION)
+        )
         configured = material_settings.get(material, {})
         density = _positive_number(configured.get("density")) or density
         estimated_friction = _positive_number(configured.get("friction")) or estimated_friction

@@ -1,4 +1,5 @@
 """Offline typed model fixtures for synthetic and unit-test execution."""
+
 from __future__ import annotations
 
 from collections import deque

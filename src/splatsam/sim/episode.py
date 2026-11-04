@@ -1,12 +1,13 @@
 """Deterministic MuJoCo grasp episodes with physical, contact-based scoring."""
+
 from __future__ import annotations
 
+import json
+from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from math import ceil, cos, isfinite, sin
 from multiprocessing import get_context
-from typing import Iterable
-import json
 
 import numpy as np
 
@@ -16,7 +17,7 @@ from splatsam.planner.params import PlannerParams
 from splatsam.sim.scene import DT, FINGERTIP_CLEARANCE_M, body_name, build_model, geom_name
 from splatsam.utils import digest
 
-import mujoco
+import mujoco  # isort: skip
 
 
 SETTLE_SECONDS = 0.5
@@ -28,6 +29,7 @@ PENETRATION_LIMIT_M = 0.005
 LINEAR_SPEED_LIMIT_M_S = 5.0
 ANGULAR_SPEED_LIMIT_RAD_S = 100.0
 TRACE_INTERVAL_STEPS = 20
+
 
 def hold_scored_success(
     min_hold_lift_m: float,
@@ -44,6 +46,7 @@ def hold_scored_success(
         and observed_hold_steps == required_steps
         and end_finger_contact
     )
+
 
 # Each spawned process owns these model objects. Mutable arrays are restored before
 # every use, while MjData is always newly allocated for an episode.
@@ -173,7 +176,9 @@ def _observe(
             metrics.max_preclose_displacement,
             float(np.linalg.norm(_target_position(data, metrics.target_body) - metrics._settled_xyz)),
         )
-    if metrics.trace_enabled and (force_trace or int(round(data.time / model.opt.timestep)) % TRACE_INTERVAL_STEPS == 0):
+    if metrics.trace_enabled and (
+        force_trace or round(data.time / model.opt.timestep) % TRACE_INTERVAL_STEPS == 0
+    ):
         hand = data.mocap_pos[0]
         target = _target_position(data, metrics.target_body)
         metrics.trace.append(
@@ -201,9 +206,7 @@ def _step(
     force_trace: bool = False,
 ) -> bool:
     mujoco.mj_step(model, data)
-    _observe(
-        model, data, metrics, phase=phase, preclose=preclose, hand_yaw=hand_yaw, force_trace=force_trace
-    )
+    _observe(model, data, metrics, phase=phase, preclose=preclose, hand_yaw=hand_yaw, force_trace=force_trace)
     return not metrics.invalid and not metrics.timed_out
 
 
@@ -361,7 +364,9 @@ def run_episode(
     metrics._settled_xyz = settled.copy()
     start_z = float(settled[2])
     observed = {
-        object_spec.id: tuple(_target_position(data, _id(model, mujoco.mjtObj.mjOBJ_BODY, body_name(object_spec.id))))
+        object_spec.id: tuple(
+            _target_position(data, _id(model, mujoco.mjtObj.mjOBJ_BODY, body_name(object_spec.id)))
+        )
         for object_spec in [*scene.objects, *scenario.obstacles]
         if mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name(object_spec.id)) >= 0
     }
@@ -396,9 +401,7 @@ def run_episode(
         speed=params.approach_speed,
         phase="pregrasp",
         preclose=True,
-    ):
-        failure, detail = _physical_failure(metrics, grasp)
-    elif not _move(
+    ) or not _move(
         model,
         data,
         metrics,
@@ -420,9 +423,7 @@ def run_episode(
             yaw=grasp.yaw,
             phase="close",
             preclose=False,
-        ):
-            failure, detail = _physical_failure(metrics, grasp)
-        elif not _move(
+        ) or not _move(
             model,
             data,
             metrics,

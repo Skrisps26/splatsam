@@ -1,4 +1,5 @@
 """Semantic object identification from explicitly authorized RGB frames."""
+
 from __future__ import annotations
 
 import base64
@@ -64,7 +65,7 @@ def _record_fixture(client: object, fixture: ObjectList, frame_count: int) -> No
 
 
 def identify_objects(
-    frames: list[FrameSample], client: "ModelClient", *, fixture: ObjectList | None = None
+    frames: list[FrameSample], client: ModelClient, *, fixture: ObjectList | None = None
 ) -> ObjectList:
     """Return semantic priors, never geometry or positions from hidden scene truth.
 

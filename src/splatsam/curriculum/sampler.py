@@ -1,15 +1,16 @@
 """Seeded, bounded scenario sampling for synthetic physics evaluation."""
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from math import cos, pi, sin
-from typing import Iterable
 
 import numpy as np
 
 from splatsam.llm.schemas import ObjectSpec, ScenarioFamily, ScenarioSpec, SceneSpec
 
-TRAIN_SEEDS = range(0, 150)
+TRAIN_SEEDS = range(150)
 VALIDATION_SEEDS = range(10_000, 10_100)
 TEST_SEEDS = range(900_000, 900_200)
 _PLACEMENT_ATTEMPTS = 64
@@ -29,9 +30,7 @@ class _Footprint:
 def _footprint(obj: ObjectSpec) -> _Footprint:
     """A conservative circular XY bound; positions are object centres."""
     x, y, z = obj.size
-    if obj.shape == "sphere":
-        radius = x / 2
-    elif obj.shape == "cylinder":
+    if obj.shape == "sphere" or obj.shape == "cylinder":
         radius = x / 2
     else:
         radius = float(np.hypot(x, y) / 2)
@@ -40,14 +39,21 @@ def _footprint(obj: ObjectSpec) -> _Footprint:
 
 def _inside_table(position: tuple[float, float, float], radius: float, scene: SceneSpec) -> bool:
     half_x, half_y = scene.table_size[0] / 2, scene.table_size[1] / 2
-    return abs(position[0]) + radius + _CLEARANCE_M <= half_x and abs(position[1]) + radius + _CLEARANCE_M <= half_y
+    return (
+        abs(position[0]) + radius + _CLEARANCE_M <= half_x
+        and abs(position[1]) + radius + _CLEARANCE_M <= half_y
+    )
 
 
 def _nonoverlapping(
-    position: tuple[float, float, float], radius: float, occupied: Iterable[tuple[tuple[float, float, float], float]]
+    position: tuple[float, float, float],
+    radius: float,
+    occupied: Iterable[tuple[tuple[float, float, float], float]],
 ) -> bool:
-    return all(np.hypot(position[0] - other[0], position[1] - other[1]) >= radius + other_radius + _CLEARANCE_M
-               for other, other_radius in occupied)
+    return all(
+        np.hypot(position[0] - other[0], position[1] - other[1]) >= radius + other_radius + _CLEARANCE_M
+        for other, other_radius in occupied
+    )
 
 
 def _random_position(
@@ -57,7 +63,10 @@ def _random_position(
     z: float,
     occupied: list[tuple[tuple[float, float, float], float]],
 ) -> tuple[float, float, float] | None:
-    half_x, half_y = scene.table_size[0] / 2 - radius - _CLEARANCE_M, scene.table_size[1] / 2 - radius - _CLEARANCE_M
+    half_x, half_y = (
+        scene.table_size[0] / 2 - radius - _CLEARANCE_M,
+        scene.table_size[1] / 2 - radius - _CLEARANCE_M,
+    )
     if half_x <= 0 or half_y <= 0:
         return None
     for _ in range(_PLACEMENT_ATTEMPTS):
@@ -67,7 +76,9 @@ def _random_position(
     return None
 
 
-def _scene_positions(rng: np.random.Generator, family: ScenarioFamily, scene: SceneSpec) -> tuple[dict[str, tuple[float, float, float]], list[str]]:
+def _scene_positions(
+    rng: np.random.Generator, family: ScenarioFamily, scene: SceneSpec
+) -> tuple[dict[str, tuple[float, float, float]], list[str]]:
     """Jitter each scene object while retaining every object's stable ID."""
     positions: dict[str, tuple[float, float, float]] = {}
     occupied: list[tuple[tuple[float, float, float], float]] = []
@@ -77,15 +88,25 @@ def _scene_positions(rng: np.random.Generator, family: ScenarioFamily, scene: Sc
         chosen: tuple[float, float, float] | None = None
         for _ in range(_PLACEMENT_ATTEMPTS):
             candidate = (
-                float(np.clip(obj.position[0] + rng.uniform(-family.jitter_m, family.jitter_m),
-                              -scene.table_size[0] / 2 + footprint.radius + _CLEARANCE_M,
-                              scene.table_size[0] / 2 - footprint.radius - _CLEARANCE_M)),
-                float(np.clip(obj.position[1] + rng.uniform(-family.jitter_m, family.jitter_m),
-                              -scene.table_size[1] / 2 + footprint.radius + _CLEARANCE_M,
-                              scene.table_size[1] / 2 - footprint.radius - _CLEARANCE_M)),
+                float(
+                    np.clip(
+                        obj.position[0] + rng.uniform(-family.jitter_m, family.jitter_m),
+                        -scene.table_size[0] / 2 + footprint.radius + _CLEARANCE_M,
+                        scene.table_size[0] / 2 - footprint.radius - _CLEARANCE_M,
+                    )
+                ),
+                float(
+                    np.clip(
+                        obj.position[1] + rng.uniform(-family.jitter_m, family.jitter_m),
+                        -scene.table_size[1] / 2 + footprint.radius + _CLEARANCE_M,
+                        scene.table_size[1] / 2 - footprint.radius - _CLEARANCE_M,
+                    )
+                ),
                 obj.position[2],
             )
-            if _inside_table(candidate, footprint.radius, scene) and _nonoverlapping(candidate, footprint.radius, occupied):
+            if _inside_table(candidate, footprint.radius, scene) and _nonoverlapping(
+                candidate, footprint.radius, occupied
+            ):
                 chosen = candidate
                 break
         if chosen is None:
@@ -98,7 +119,11 @@ def _scene_positions(rng: np.random.Generator, family: ScenarioFamily, scene: Sc
 
 
 def _obstacle(
-    *, obstacle_id: str, position: tuple[float, float, float], size: tuple[float, float, float], yaw: float,
+    *,
+    obstacle_id: str,
+    position: tuple[float, float, float],
+    size: tuple[float, float, float],
+    yaw: float,
     kind: str,
 ) -> ObjectSpec:
     return ObjectSpec(
@@ -135,9 +160,19 @@ def _place_occluder(
     for _ in range(_PLACEMENT_ATTEMPTS):
         angle = float(rng.uniform(-pi, pi))
         distance = target_radius + radius + _CLEARANCE_M + float(rng.uniform(0.002, 0.018))
-        position = (target_position[0] + distance * cos(angle), target_position[1] + distance * sin(angle), height / 2)
+        position = (
+            target_position[0] + distance * cos(angle),
+            target_position[1] + distance * sin(angle),
+            height / 2,
+        )
         if _inside_table(position, radius, scene) and _nonoverlapping(position, radius, occupied):
-            return _obstacle(obstacle_id=obstacle_id, position=position, size=(width, depth, height), yaw=angle, kind="occluder")
+            return _obstacle(
+                obstacle_id=obstacle_id,
+                position=position,
+                size=(width, depth, height),
+                yaw=angle,
+                kind="occluder",
+            )
     return None
 
 
@@ -162,14 +197,25 @@ def sample_scenario(family: ScenarioFamily, seed: int, scene: SceneSpec) -> Scen
 
     requested_clutter = int(rng.integers(family.clutter_count[0], family.clutter_count[1] + 1))
     for index in range(requested_clutter):
-        size = (float(rng.uniform(0.03, 0.065)), float(rng.uniform(0.03, 0.065)), float(rng.uniform(0.02, 0.055)))
+        size = (
+            float(rng.uniform(0.03, 0.065)),
+            float(rng.uniform(0.03, 0.065)),
+            float(rng.uniform(0.02, 0.055)),
+        )
         radius = float(np.hypot(size[0], size[1]) / 2)
         position = _random_position(rng, scene, radius, size[2] / 2, occupied)
         if position is None:
-            degradation.append(f"clutter placement degraded: requested {requested_clutter}, placed {len(obstacles)}")
+            degradation.append(
+                f"clutter placement degraded: requested {requested_clutter}, placed {len(obstacles)}"
+            )
             break
-        obstacle = _obstacle(obstacle_id=f"clutter-{seed}-{index}", position=position, size=size,
-                             yaw=float(rng.uniform(-pi, pi)), kind="clutter")
+        obstacle = _obstacle(
+            obstacle_id=f"clutter-{seed}-{index}",
+            position=position,
+            size=size,
+            yaw=float(rng.uniform(-pi, pi)),
+            kind="clutter",
+        )
         obstacles.append(obstacle)
         occupied.append((position, radius))
 
@@ -178,14 +224,17 @@ def sample_scenario(family: ScenarioFamily, seed: int, scene: SceneSpec) -> Scen
     placed_occluders = 0
     for index in range(requested_occluders):
         height = float(rng.uniform(*family.occluder_height))
-        obstacle = _place_occluder(rng, scene, positions[target.id], target_radius, height, occupied,
-                                   f"occluder-{seed}-{index}")
+        obstacle = _place_occluder(
+            rng, scene, positions[target.id], target_radius, height, occupied, f"occluder-{seed}-{index}"
+        )
         if obstacle is None:
-            degradation.append(f"occluder placement degraded: requested {requested_occluders}, placed {placed_occluders}")
+            degradation.append(
+                f"occluder placement degraded: requested {requested_occluders}, placed {placed_occluders}"
+            )
             break
         obstacles.append(obstacle)
         occupied.append((obstacle.position, _footprint(obstacle).radius))
-        placed_occluders += 1
+        placed_occluders += 1  # noqa: SIM113 - count successful placements, not attempted placements
 
     return ScenarioSpec(
         seed=seed,

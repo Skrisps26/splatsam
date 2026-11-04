@@ -1,9 +1,10 @@
 """Paper-reference homography and metric raster construction for perception masks."""
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
 
 import cv2
 import imageio.v2 as imageio
@@ -11,7 +12,6 @@ import numpy as np
 
 from splatsam.llm.schemas import MaskFrame, MaskTrack
 from splatsam.perception.frames import FrameSample
-
 
 SHEET_SHORT_M = 0.210
 SHEET_LONG_M = 0.297
@@ -80,10 +80,15 @@ def _reference_track(tracks: Iterable[MaskTrack]) -> MaskTrack | None:
         if any(word in track.name.lower() or word in track.id.lower() for word in _REFERENCE_WORDS)
     ]
     # Prefer the explicit `reference` name when present over generic paper.
-    return next((track for track in matches if "reference" in track.name.lower() or "reference" in track.id.lower()), matches[0] if matches else None)
+    return next(
+        (track for track in matches if "reference" in track.name.lower() or "reference" in track.id.lower()),
+        matches[0] if matches else None,
+    )
 
 
-def _frame_masks(tracks: Iterable[MaskTrack], frame_index: int) -> list[tuple[MaskTrack, MaskFrame, np.ndarray]]:
+def _frame_masks(
+    tracks: Iterable[MaskTrack], frame_index: int
+) -> list[tuple[MaskTrack, MaskFrame, np.ndarray]]:
     result: list[tuple[MaskTrack, MaskFrame, np.ndarray]] = []
     for track in tracks:
         for frame in track.frames:
@@ -116,7 +121,9 @@ def _paper_quad(mask: np.ndarray) -> tuple[np.ndarray, float, float] | None:
     contour = max(contours, key=cv2.contourArea)
     perimeter = cv2.arcLength(contour, True)
     approximation = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
-    corners = approximation.reshape(-1, 2) if len(approximation) == 4 else cv2.boxPoints(cv2.minAreaRect(contour))
+    corners = (
+        approximation.reshape(-1, 2) if len(approximation) == 4 else cv2.boxPoints(cv2.minAreaRect(contour))
+    )
     if len(corners) != 4:
         return None
     corners = _order_corners(corners)
@@ -158,28 +165,44 @@ def _raster_transform(
             pixel_points.append(np.column_stack((xs, ys)).astype(np.float32))
     if not pixel_points:
         height, width = image_shape
-        pixel_points.append(np.asarray([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32))
-    metric_points = np.concatenate([cv2.perspectiveTransform(points[None, ...], homography)[0] for points in pixel_points])
+        pixel_points.append(
+            np.asarray([[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]], dtype=np.float32)
+        )
+    metric_points = np.concatenate(
+        [cv2.perspectiveTransform(points[None, ...], homography)[0] for points in pixel_points]
+    )
     minimum = metric_points.min(axis=0) - 2 * METERS_PER_PIXEL
     maximum = metric_points.max(axis=0) + 2 * METERS_PER_PIXEL
     width = max(1, int(np.ceil((maximum[0] - minimum[0]) / METERS_PER_PIXEL)))
     height = max(1, int(np.ceil((maximum[1] - minimum[1]) / METERS_PER_PIXEL)))
     # This affine prefix turns image -> metres into image -> raster pixels.
     raster_prefix = np.asarray(
-        [[1 / METERS_PER_PIXEL, 0, -minimum[0] / METERS_PER_PIXEL], [0, 1 / METERS_PER_PIXEL, -minimum[1] / METERS_PER_PIXEL], [0, 0, 1]],
+        [
+            [1 / METERS_PER_PIXEL, 0, -minimum[0] / METERS_PER_PIXEL],
+            [0, 1 / METERS_PER_PIXEL, -minimum[1] / METERS_PER_PIXEL],
+            [0, 0, 1],
+        ],
         dtype=np.float64,
     )
-    bounds = (float(minimum[0]), float(minimum[1]), float(minimum[0] + width * METERS_PER_PIXEL), float(minimum[1] + height * METERS_PER_PIXEL))
+    bounds = (
+        float(minimum[0]),
+        float(minimum[1]),
+        float(minimum[0] + width * METERS_PER_PIXEL),
+        float(minimum[1] + height * METERS_PER_PIXEL),
+    )
     return raster_prefix @ homography, bounds, (height, width)
 
 
-def _manual_result(frames: list[FrameSample], tracks: list[MaskTrack], pixels_per_cm: float) -> ReferenceResult:
+def _manual_result(
+    frames: list[FrameSample], tracks: list[MaskTrack], pixels_per_cm: float
+) -> ReferenceResult:
     if not np.isfinite(pixels_per_cm) or pixels_per_cm <= 0:
         raise ReferenceError("manual pixels/cm must be finite and positive")
     frame = max(frames, key=lambda candidate: candidate.blur_score)
     metres_per_image_pixel = 0.01 / pixels_per_cm
     homography = np.asarray(
-        [[metres_per_image_pixel, 0.0, 0.0], [0.0, metres_per_image_pixel, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64
+        [[metres_per_image_pixel, 0.0, 0.0], [0.0, metres_per_image_pixel, 0.0], [0.0, 0.0, 1.0]],
+        dtype=np.float64,
     )
     masks = _frame_masks(tracks, frame.index)
     image_to_raster, bounds, shape = _raster_transform(homography, masks, frame.image.shape[:2])
@@ -225,7 +248,9 @@ def find_reference(
                 continue
             corners, ratio_error, area_error = extraction
             if ratio_error > 0.05 or area_error > 0.10:
-                diagnostics.append(f"paper_validation_failed:{sample.index}:ratio={ratio_error:.3f}:area={area_error:.3f}")
+                diagnostics.append(
+                    f"paper_validation_failed:{sample.index}:ratio={ratio_error:.3f}:area={area_error:.3f}"
+                )
                 continue
             destination = _metric_destination(corners)
             homography, _ = cv2.findHomography(corners.astype(np.float32), destination, method=0)
@@ -233,7 +258,9 @@ def find_reference(
                 diagnostics.append(f"homography_failed:{sample.index}")
                 continue
             selected_masks = _frame_masks(tracks, sample.index)
-            image_to_raster, bounds, shape = _raster_transform(homography, selected_masks, sample.image.shape[:2])
+            image_to_raster, bounds, shape = _raster_transform(
+                homography, selected_masks, sample.image.shape[:2]
+            )
             return ReferenceResult(
                 homography=homography,
                 image_to_raster=image_to_raster,
@@ -241,7 +268,8 @@ def find_reference(
                 working_frame_index=sample.index,
                 scale_source="paper_homography",
                 validation={"aspect_ratio_error": ratio_error, "paper_area_error": area_error},
-                diagnostics=diagnostics + ["paper ratio/area checks are self-consistency checks, not independent scale truth"],
+                diagnostics=diagnostics
+                + ["paper ratio/area checks are self-consistency checks, not independent scale truth"],
                 _raster_shape=shape,
             )
     else:

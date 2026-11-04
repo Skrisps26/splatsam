@@ -3,23 +3,22 @@
 The real backend lazily loads official inference and exports output['glb'].
 It never substitutes a synthetic mesh for an unavailable real model.
 """
+
 from __future__ import annotations
 
 import argparse
 import hmac
 import os
-from typing import Literal
+from typing import Annotated, Literal
 
 import cv2
+import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
-import numpy as np
 from starlette.concurrency import run_in_threadpool
-from splatsam.recon.gpu_client import ReconstructionError
-from splatsam.recon.sam3d_backend import Sam3dBackend
 
 from splatsam.recon.gpu_client import StubReconstructor
-
+from splatsam.recon.sam3d_backend import Sam3dBackend
 
 Backend = Literal["stub", "sam3d"]
 
@@ -70,14 +69,21 @@ def create_app(backend: Backend = "stub") -> FastAPI:
     def health() -> dict[str, object]:
         if backend == "sam3d":
             available, reason = sam3d.availability()
-            return {"ok": available, "backend": backend, "available": available, "fake": False, "reason": reason, "model_loaded": sam3d._inference is not None}
+            return {
+                "ok": available,
+                "backend": backend,
+                "available": available,
+                "fake": False,
+                "reason": reason,
+                "model_loaded": sam3d._inference is not None,
+            }
         return {"ok": True, "backend": backend, "available": True, "fake": True}
 
     @app.post("/reconstruct")
     async def reconstruct(
         request: Request,
-        image: UploadFile = File(...),
-        mask: UploadFile = File(...),
+        image: Annotated[UploadFile, File()],
+        mask: Annotated[UploadFile, File()],
         seed: int = Form(...),
     ) -> Response:
         _require_bearer(request)
@@ -88,13 +94,23 @@ def create_app(backend: Backend = "stub") -> FastAPI:
             raise HTTPException(status_code=413, detail="image and mask must each be at most 32 MiB")
         rgb, binary = _decode_inputs(image_data, mask_data)
         try:
-            payload = await run_in_threadpool(sam3d.reconstruct, rgb, binary, seed) if backend == "sam3d" else stub.reconstruct(rgb, binary)
+            payload = (
+                await run_in_threadpool(sam3d.reconstruct, rgb, binary, seed)
+                if backend == "sam3d"
+                else stub.reconstruct(rgb, binary)
+            )
         except Exception as error:
-            raise HTTPException(status_code=503, detail=f"Reconstruction unavailable ({type(error).__name__}); use primitive fallback") from error
+            raise HTTPException(
+                status_code=503,
+                detail=f"Reconstruction unavailable ({type(error).__name__}); use primitive fallback",
+            ) from error
         return Response(
             content=payload,
             media_type="model/gltf-binary",
-            headers={"X-Splatsam-Reconstruction-Backend": backend, "X-Splatsam-Reconstruction-Fake": "true" if backend == "stub" else "false"},
+            headers={
+                "X-Splatsam-Reconstruction-Backend": backend,
+                "X-Splatsam-Reconstruction-Fake": "true" if backend == "stub" else "false",
+            },
         )
 
     return app

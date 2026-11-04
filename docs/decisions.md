@@ -20,3 +20,17 @@ Searches performed before implementation; no inference or paid resources during 
 | Segmentation outage | https://github.com/facebookresearch/sam2 | optional SAM 2.1 tiny CPU predictor only if prolonged live SAM outage, not a default weight download |
 
 Python 3.12 selected for scientific-wheel compatibility. Installed exact versions are recorded in uv.lock. Defaults use Standard Meta models rather than Contributor variants. No MODEL_API_KEY was present at project creation; the live spike remains explicitly blocked until supplied through the environment. Public GitHub requested; raw video/private data and secrets remain excluded. Scenario physics multipliers are hidden from planner's nominal mass/friction estimates.
+
+## Implementation evidence and corrections
+
+- Software EGL/llvmpipe renders genuine MuJoCo RGB and segmentation locally; OSMesa was unavailable. Renderer initialization precedes MuJoCo imports. No inference GPU or paid compute was used.
+- The calibration fixture uses a distant approximately 3 m camera, 23° field of view and 1280×960 frames. This reduces height parallax and narrow-marker quantization without changing the required 5% scale / 10% size acceptance thresholds.
+- Digital contour perimeter biased circularity. OpenCV contour simplification at 0.75 raster pixels restores a sphere classification while retaining the requested 0.85 circularity threshold.
+- A silhouette alignment bug was exposed by an independent analytic footprint check, not by comparing a renderer to itself. The metric camera uses azimuth 90° with explicit pixel-origin alignment; final footprint IoUs are 0.901–0.991.
+- Verified the upstream SAM 3D inference pipeline actually returns `output["glb"]`. Its README's Gaussian PLY example is not the only output format. The optional adapter exports the GLB directly; weights, GPU runtime and deployment remain unverified.
+- Remote reconstruction caches include model/backend and stub-acceptance policy. A fake CPU-stub result cannot silently become an accepted production mesh. The primitive path remains the active simulation path.
+- Budget caps and the USD 70 reserve cannot be relaxed by config. All production Meta clients share one global ledger; failed or unmetered attempts retain conservative charges. Cleanup failures retain active resource IDs and log only exception classes, not provider exception strings that could contain credentials.
+- Cached synthetic artifacts bind immutable result/seal hashes. Core-source changes use a fresh synthetic revision instead of reopening an old one-shot seal. Real evaluation never automatically changes namespace or retries.
+- The dashboard is a read-only native Streamlit viewer with local periodic refresh. Browser verification covered desktop/mobile layout, both actual videos, empty-result state and file-change refresh; no inference is triggered by viewing it.
+- Exact installed dependencies are locked in `uv.lock`. Ruff formatting and focused annotations preserve deliberate stage-wide fallback and persisted-artifact validation boundaries instead of changing their public error contracts.
+- The live Meta spike is still blocked by the missing environment key. RunPod MCP is not mounted. No substitute provider was activated, and no live request format or GPU cleanup is claimed as exercised.

@@ -4,22 +4,23 @@ This module deliberately has no cloud SDK.  A provider adapter must be supplied
 by an authorized Phase B caller; the default RunPod path is unavailable when no
 lifecycle control route is mounted.
 """
+
 from __future__ import annotations
 
-from contextlib import contextmanager
-from decimal import Decimal, InvalidOperation
 import fcntl
 import json
 import os
-from pathlib import Path
 import tempfile
 import time
-from typing import Any, Iterator, Protocol
+from collections.abc import Iterator
+from contextlib import contextmanager
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any, Protocol
 from uuid import uuid4
 
-
-ZERO = Decimal("0")
-_PROVIDER_DEFAULT_CAPS = {"runpod": Decimal("4"), "aws": Decimal("25")}
+ZERO = Decimal(0)
+_PROVIDER_DEFAULT_CAPS = {"runpod": Decimal(4), "aws": Decimal(25)}
 
 
 class GpuLedgerError(RuntimeError):
@@ -53,9 +54,9 @@ class UnavailableRunPodAdapter:
         return []
 
 
-def _money(value: Decimal | str | int | float, field: str) -> Decimal:
+def _money(value: Decimal | str | float, field: str) -> Decimal:
     if isinstance(value, bool):
-        raise ValueError(f"{field} must be a finite nonnegative amount")
+        raise ValueError(f"{field} must be a finite nonnegative amount")  # noqa: TRY004 - unified cost-domain validation
     try:
         amount = Decimal(str(value))
     except (InvalidOperation, ValueError) as error:
@@ -88,7 +89,9 @@ class GpuLedger:
         for provider, cap in (provider_caps or {}).items():
             key = str(provider).lower()
             configured = _money(cap, f"cap for {provider}")
-            self.provider_caps[key] = min(configured, _PROVIDER_DEFAULT_CAPS[key]) if key in _PROVIDER_DEFAULT_CAPS else configured
+            self.provider_caps[key] = (
+                min(configured, _PROVIDER_DEFAULT_CAPS[key]) if key in _PROVIDER_DEFAULT_CAPS else configured
+            )
 
     @contextmanager
     def _locked(self) -> Iterator[dict[str, Any]]:
@@ -114,7 +117,9 @@ class GpuLedger:
         return value
 
     def _write(self, value: dict[str, Any]) -> None:
-        value["total_usd"] = str(sum((_money(record.get("spent_usd", "0"), "spent_usd") for record in value["resources"]), ZERO))
+        value["total_usd"] = str(
+            sum((_money(record.get("spent_usd", "0"), "spent_usd") for record in value["resources"]), ZERO)
+        )
         fd, temporary_name = tempfile.mkstemp(prefix=f".{self.path.name}.", dir=self.path.parent)
         temporary = Path(temporary_name)
         try:
@@ -141,7 +146,7 @@ class GpuLedger:
         price = _money(record["price_per_hour_usd"], "price_per_hour_usd")
         started = float(record["started_at"])
         ended = now if record.get("active") else float(record.get("stopped_at", now))
-        return price * Decimal(str(max(0.0, ended - started))) / Decimal("3600")
+        return price * Decimal(str(max(0.0, ended - started))) / Decimal(3600)
 
     def _cap(self, provider: str) -> Decimal:
         try:
@@ -153,14 +158,16 @@ class GpuLedger:
         self,
         *,
         provider: str,
-        price_per_hour_usd: Decimal | str | int | float,
+        price_per_hour_usd: Decimal | str | float,
         reason: str,
         max_runtime_s: int,
         now: float | None = None,
     ) -> str:
         """Create exactly one resource after all phase, cap, and reservation gates."""
         if self.phase.upper() != "B":
-            raise ProviderUnavailable("Phase A forbids every provider-create call; only confirmed Phase B is eligible")
+            raise ProviderUnavailable(
+                "Phase A forbids every provider-create call; only confirmed Phase B is eligible"
+            )
         if not isinstance(max_runtime_s, int) or isinstance(max_runtime_s, bool) or max_runtime_s <= 0:
             raise ValueError("max_runtime_s must be a positive integer")
         provider = provider.lower()
@@ -174,8 +181,15 @@ class GpuLedger:
         with self._locked() as ledger:
             if self._active(ledger):
                 raise GpuLedgerError("at most one GPU resource may be active")
-            prior = sum((self._spent(record, current_time) for record in ledger["resources"] if record["provider"] == provider), ZERO)
-            reserved = price * Decimal(max_runtime_s + self.teardown_margin_s) / Decimal("3600")
+            prior = sum(
+                (
+                    self._spent(record, current_time)
+                    for record in ledger["resources"]
+                    if record["provider"] == provider
+                ),
+                ZERO,
+            )
+            reserved = price * Decimal(max_runtime_s + self.teardown_margin_s) / Decimal(3600)
             if prior + reserved > cap:
                 raise GpuLedgerError("GPU cap cannot cover runtime plus teardown margin")
             # Adapter invocation occurs only after all local gates. If it raises,
@@ -235,8 +249,8 @@ class GpuLedger:
                 active_ids = {
                     str(item.get("resource_id", item.get("id", ""))) for item in self.adapter.list_active()
                 }
-            except Exception as error:  # A failed cleanup must remain visible/actionable.
-                record["cleanup_error"] = str(error)
+            except Exception as error:  # noqa: BLE001 - cleanup must preserve actionable active IDs on all provider failures
+                record["cleanup_error"] = type(error).__name__
                 record["cleanup_verified"] = False
                 return False
             if resource_id in active_ids:
@@ -259,7 +273,14 @@ class GpuLedger:
             elapsed = current - float(record["started_at"])
             idle = current - float(record.get("last_activity_at", record["started_at"]))
             no_mesh = record.get("usable_mesh_at") is None and elapsed >= 45 * 60
-            provider_spend = sum((self._spent(item, current) for item in ledger["resources"] if item["provider"] == record["provider"]), ZERO)
+            provider_spend = sum(
+                (
+                    self._spent(item, current)
+                    for item in ledger["resources"]
+                    if item["provider"] == record["provider"]
+                ),
+                ZERO,
+            )
             at_cap = provider_spend >= self._cap(str(record["provider"]))
             if finished:
                 reason = "finished"
@@ -289,5 +310,9 @@ class GpuLedger:
 
 
 __all__ = [
-    "GpuLedger", "GpuLedgerError", "GpuLifecycleAdapter", "ProviderUnavailable", "UnavailableRunPodAdapter",
+    "GpuLedger",
+    "GpuLedgerError",
+    "GpuLifecycleAdapter",
+    "ProviderUnavailable",
+    "UnavailableRunPodAdapter",
 ]

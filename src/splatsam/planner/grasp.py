@@ -1,9 +1,10 @@
 """Deterministic top-down grasp candidates for the floating parallel-jaw hand."""
+
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from math import cos, isfinite, pi, sin
-from typing import Mapping
 
 from splatsam.llm.schemas import ObjectSpec, ScenarioSpec, SceneSpec
 from splatsam.planner.params import PlannerParams
@@ -53,7 +54,9 @@ def _finite_xyz(values: tuple[float, float, float] | object) -> bool:
         return False
 
 
-def _position(spec: ObjectSpec, observed: Mapping[str, tuple[float, float, float]] | None) -> tuple[float, float, float]:
+def _position(
+    spec: ObjectSpec, observed: Mapping[str, tuple[float, float, float]] | None
+) -> tuple[float, float, float]:
     candidate = spec.position if observed is None else observed.get(spec.id, spec.position)
     if not _finite_xyz(candidate):
         raise ValueError(f"{spec.id}: non-finite observed position")
@@ -158,12 +161,10 @@ def plan_grasp(
         return None
     if not all(isfinite(value) and value > 0 for value in (*target.size, target.mass, target.friction)):
         return None
-    if max(target.size) < .015 or min(target.size[:2]) > .08:
+    if max(target.size) < 0.015 or min(target.size[:2]) > 0.08:
         return None
 
-    obstacle_specs = [
-        item for item in [*scene.objects, *scenario.obstacles] if item.id != target.id
-    ]
+    obstacle_specs = [item for item in [*scene.objects, *scenario.obstacles] if item.id != target.id]
     force = grip_force_per_finger(target.mass, target.friction, params)
     candidates: list[Grasp] = []
     for yaw in _axis_yaws(target, params.n_yaw_candidates):

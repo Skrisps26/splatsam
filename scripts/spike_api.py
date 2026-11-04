@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 """Opt-in, bounded live Meta format spike. It is deliberately not a Make target."""
+
 from __future__ import annotations
 
 import argparse
 import base64
 import json
 import os
+from datetime import UTC, datetime
 from decimal import Decimal
-from datetime import datetime, timezone
 from pathlib import Path
 
 import cv2
@@ -15,9 +16,9 @@ import imageio.v3 as iio
 import numpy as np
 
 from splatsam.budget import BudgetTracker
-from splatsam.llm.client import ModelClient, MAX_OUTPUT_TOKENS, normalized_json_schema
+from splatsam.llm.client import MAX_OUTPUT_TOKENS, ModelClient, normalized_json_schema
 from splatsam.llm.schemas import ObjectList, ScenarioFamily
-from splatsam.utils import save_json, file_digest
+from splatsam.utils import file_digest, save_json
 
 
 def _synthetic_media(root: Path) -> tuple[str, Path]:
@@ -49,7 +50,7 @@ def _require_live(client: ModelClient, what: str) -> None:
 
 def _append_observed_notes(project_root: Path, fixture: Path, snapshot: dict) -> None:
     notes = project_root / "docs" / "api_notes.md"
-    timestamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    timestamp = datetime.now(UTC).replace(microsecond=0).isoformat()
     entry = (
         "\n## Live-confirmed spike\n\n"
         f"- UTC: `{timestamp}`\n"
@@ -99,28 +100,91 @@ def main() -> int:
             ObjectList,
             model="muse-spark-1.3",
             instructions="List the single synthetic colored rectangle as an object.",
-            input=[{"role": "user", "content": [{"type": "input_text", "text": "synthetic image only"}, {"type": "input_image", "image_url": image_data_uri}]}],
+            input=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "synthetic image only"},
+                        {"type": "input_image", "image_url": image_data_uri},
+                    ],
+                }
+            ],
             stage="spike_spark",
         )
         _require_live(client, "Spark request")
         sam = client.sam_request(video, "colored rectangle")
         _require_live(client, "SAM request")
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - failed format verification must never become live evidence
         print(f"BLOCKED/FAILED: {type(error).__name__}: {error}")
         return 1
 
     snapshot = budget.snapshot()
     total = float(snapshot.get("total_usd", 0))
     if total > args.max_usd:
-        print(f"BLOCKED: observed ledger total ${total:.6f} exceeds requested spike limit ${args.max_usd:.2f}.")
+        print(
+            f"BLOCKED: observed ledger total ${total:.6f} exceeds requested spike limit ${args.max_usd:.2f}."
+        )
         return 1
     fixture = run_dir / "observed_fixture.json"
     safe_snapshot = _json_safe(snapshot)
     requests = {
-        "wonder": {"model":"muse-wonder-1.0","instructions":"Return a bounded scenario family for a synthetic tabletop scene.","input":"Synthetic tabletop format check only.","max_output_tokens":MAX_OUTPUT_TOKENS,"text":{"format":{"type":"json_schema","name":"scenariofamily","schema":normalized_json_schema(ScenarioFamily),"strict":True}}},
-        "spark": {"model":"muse-spark-1.3","instructions":"List the single synthetic colored rectangle as an object.","input":[{"role":"user","content":[{"type":"input_text","text":"synthetic image only"},{"type":"input_image","image_url":image_data_uri}]}],"max_output_tokens":MAX_OUTPUT_TOKENS,"text":{"format":{"type":"json_schema","name":"objectlist","schema":normalized_json_schema(ObjectList),"strict":True}}},
-        "files": {"method":"POST","url":"https://api.meta.ai/v1/files","purpose":"user_data","file_artifact":str(video.relative_to(project_root)),"file_sha256":file_digest(video)},
-        "sam": {"model":"sam-3.1","stream":True,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"colored rectangle"},{"type":"input_video","file_id":client.cache.get("upload:"+file_digest(video))}]}]},
+        "wonder": {
+            "model": "muse-wonder-1.0",
+            "instructions": "Return a bounded scenario family for a synthetic tabletop scene.",
+            "input": "Synthetic tabletop format check only.",
+            "max_output_tokens": MAX_OUTPUT_TOKENS,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "scenariofamily",
+                    "schema": normalized_json_schema(ScenarioFamily),
+                    "strict": True,
+                }
+            },
+        },
+        "spark": {
+            "model": "muse-spark-1.3",
+            "instructions": "List the single synthetic colored rectangle as an object.",
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "synthetic image only"},
+                        {"type": "input_image", "image_url": image_data_uri},
+                    ],
+                }
+            ],
+            "max_output_tokens": MAX_OUTPUT_TOKENS,
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "objectlist",
+                    "schema": normalized_json_schema(ObjectList),
+                    "strict": True,
+                }
+            },
+        },
+        "files": {
+            "method": "POST",
+            "url": "https://api.meta.ai/v1/files",
+            "purpose": "user_data",
+            "file_artifact": str(video.relative_to(project_root)),
+            "file_sha256": file_digest(video),
+        },
+        "sam": {
+            "model": "sam-3.1",
+            "stream": True,
+            "input": [
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "colored rectangle"},
+                        {"type": "input_video", "file_id": client.cache.get("upload:" + file_digest(video))},
+                    ],
+                }
+            ],
+        },
     }
     save_json(
         fixture,
@@ -129,7 +193,11 @@ def main() -> int:
             "requests": requests,
             "wonder": wonder.model_dump(mode="json"),
             "spark": spark.model_dump(mode="json"),
-            "sam": {"output_text": sam["output_text"], "usage": sam["usage"], "frames_billed": sam["frames_billed"]},
+            "sam": {
+                "output_text": sam["output_text"],
+                "usage": sam["usage"],
+                "frames_billed": sam["frames_billed"],
+            },
             "ledger": safe_snapshot,
         },
     )

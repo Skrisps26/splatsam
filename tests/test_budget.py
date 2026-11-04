@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from decimal import Decimal
-import multiprocessing
 from pathlib import Path
 
 import pytest
@@ -23,15 +23,15 @@ def test_phase_a_cap_includes_pending_reservations(tmp_path: Path) -> None:
     tracker = BudgetTracker(tmp_path / "runs" / "first")
     reservation = tracker.reserve("unpriced-model", input_tokens=2_500_000)
 
-    assert tracker.total_usd == Decimal("10")
+    assert tracker.total_usd == Decimal(10)
     with pytest.raises(BudgetExceeded):
         tracker.reserve("unpriced-model", input_tokens=1)
 
     tracker.settle(reservation)
     snapshot = tracker.snapshot()
-    assert snapshot["committed_usd"] == Decimal("10")
-    assert snapshot["pending_usd"] == Decimal("0")
-    assert snapshot["phase_totals"]["A"]["total_usd"] == Decimal("10")
+    assert snapshot["committed_usd"] == Decimal(10)
+    assert snapshot["pending_usd"] == Decimal(0)
+    assert snapshot["phase_totals"]["A"]["total_usd"] == Decimal(10)
 
 
 def test_development_cap_applies_outside_phase_a(tmp_path: Path) -> None:
@@ -52,7 +52,7 @@ def test_concurrent_reservations_share_one_locked_ledger(tmp_path: Path) -> None
     snapshot = tracker.snapshot()
     assert sum(accepted) == 20
     assert snapshot["pending_reservations"] == 20
-    assert snapshot["total_usd"] == Decimal("10")
+    assert snapshot["total_usd"] == Decimal(10)
 
 
 def test_missing_or_excess_actual_cost_is_conservative_and_persistent(tmp_path: Path) -> None:
@@ -67,7 +67,7 @@ def test_missing_or_excess_actual_cost_is_conservative_and_persistent(tmp_path: 
     restarted = BudgetTracker(tmp_path / "runs" / "second")
     snapshot = restarted.snapshot()
     assert snapshot["committed_usd"] == Decimal("0.6")
-    assert snapshot["pending_usd"] == Decimal("0")
+    assert snapshot["pending_usd"] == Decimal(0)
     assert snapshot["dispatch_blocked"] is True
     with pytest.raises(BudgetExceeded):
         restarted.reserve("unpriced-model", input_tokens=1)
@@ -83,9 +83,10 @@ def test_sam_frame_minimum_and_image_prices(tmp_path: Path) -> None:
     tracker.settle(images)
     assert tracker.total_usd == Decimal("0.0150")
 
-@pytest.mark.parametrize("phase,tokens", [("A",2_750_000),("B",12_750_000)])
-def test_configuration_can_lower_but_never_raise_hard_caps(tmp_path,phase,tokens):
-    tracker=BudgetTracker(tmp_path/"ledger.json",phase=phase)
-    tracker._settings["budget"].update(phase_a_usd=100,development_usd=1000,reserve_usd=0)
+
+@pytest.mark.parametrize("phase,tokens", [("A", 2_750_000), ("B", 12_750_000)])
+def test_configuration_can_lower_but_never_raise_hard_caps(tmp_path, phase, tokens):
+    tracker = BudgetTracker(tmp_path / "ledger.json", phase=phase)
+    tracker._settings["budget"].update(phase_a_usd=100, development_usd=1000, reserve_usd=0)
     with pytest.raises(BudgetExceeded):
-        tracker.reserve("unpriced-model",input_tokens=tokens)
+        tracker.reserve("unpriced-model", input_tokens=tokens)

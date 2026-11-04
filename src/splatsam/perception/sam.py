@@ -1,11 +1,14 @@
 """Persistent-mask tracking adapters for parsed SAM video responses and fixtures."""
+
 from __future__ import annotations
 
+import itertools
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
-from typing import Any, Iterable, Sequence, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import imageio.v2 as imageio
@@ -45,7 +48,9 @@ class AssociatedInstance:
     diagnostics: list[str] = field(default_factory=list)
 
 
-def _as_observation(value: InstanceObservation | dict[str, Any] | Sequence[Any], frame_index: int) -> InstanceObservation:
+def _as_observation(
+    value: InstanceObservation | dict[str, Any] | Sequence[Any], frame_index: int
+) -> InstanceObservation:
     if isinstance(value, InstanceObservation):
         return value
     if isinstance(value, dict):
@@ -98,7 +103,9 @@ def associate_instances(
     for sequence_index, raw_detections in enumerate(detections_by_frame):
         detections = [_as_observation(item, sequence_index) for item in raw_detections]
         if not instances:
-            for detection in sorted(detections, key=lambda item: (item.centroid[0], item.centroid[1], item.source_id)):
+            for detection in sorted(
+                detections, key=lambda item: (item.centroid[0], item.centroid[1], item.source_id)
+            ):
                 instances.append(AssociatedInstance(id=f"{phrase}-{next_id}", observations=[detection]))
                 next_id += 1
             continue
@@ -147,7 +154,7 @@ def stability_gate(track: MaskTrack) -> tuple[bool, list[str]]:
     visibility = len(frames) / track.total_frames if track.total_frames > 0 else 0.0
     if visibility < MIN_VISIBILITY:
         diagnostics.append(f"visibility_below_{MIN_VISIBILITY:.2f}:{visibility:.3f}")
-    for previous, current in zip(frames[:-1], frames[1:], strict=True):
+    for previous, current in itertools.pairwise(frames):
         distance = float(np.linalg.norm(np.subtract(current.centroid, previous.centroid)))
         if distance > MAX_JUMP_FRACTION * track.image_width:
             diagnostics.append(f"centroid_jump:{previous.frame_index}->{current.frame_index}")
@@ -160,9 +167,7 @@ def stability_gate(track: MaskTrack) -> tuple[bool, list[str]]:
     return not diagnostics, diagnostics
 
 
-def _frame_from_mask(
-    *, frame_index: int, timestamp_s: float, mask: np.ndarray, path: Path
-) -> MaskFrame:
+def _frame_from_mask(*, frame_index: int, timestamp_s: float, mask: np.ndarray, path: Path) -> MaskFrame:
     ys, xs = np.nonzero(mask)
     if len(xs) == 0:
         raise ValueError("SAM produced an empty mask")
@@ -173,7 +178,7 @@ def _frame_from_mask(
         timestamp_s=timestamp_s,
         mask_path=str(path.resolve()),
         centroid=(float(xs.mean()), float(ys.mean())),
-        area=int(len(xs)),
+        area=len(xs),
         box=(float(left), float(top), float(right), float(bottom)),
     )
 
@@ -185,8 +190,8 @@ def _paste_parsed_mask(record: Any, image_height: int, image_width: int) -> np.n
         record.mask.height, record.mask.width
     )
     bounds = record.bounds
-    left, top = int(round(bounds.left)), int(round(bounds.top))
-    right, bottom = int(round(bounds.right)), int(round(bounds.bottom))
+    left, top = round(bounds.left), round(bounds.top)
+    right, bottom = round(bounds.right), round(bounds.bottom)
     if right <= left or bottom <= top:
         right, bottom = left + decoded.shape[1], top + decoded.shape[0]
     canvas = np.zeros((image_height, image_width), dtype=np.uint8)
@@ -208,7 +213,7 @@ def _records(result: Any) -> list[Any]:
     return list(records) if records is not None else []
 
 
-def _refined_phrase(client: "ModelClient", object_info: ObjectInfo) -> str:
+def _refined_phrase(client: ModelClient, object_info: ObjectInfo) -> str:
     """Use typed Wonder output when available; retain the observed noun on fallback."""
     try:
         reply = client.generate(
@@ -218,7 +223,7 @@ def _refined_phrase(client: "ModelClient", object_info: ObjectInfo) -> str:
             input=f"Refine the visible object noun phrase: {object_info.name}",
             stage="sam_phrase_refinement",
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - unavailable critic/proposer retains original phrase
         return object_info.name
     if reply.objects:
         return reply.objects[0].name
@@ -235,18 +240,20 @@ class MockSamClient:
         del video_path, objects
         raw = load_json(self.tracks_path)
         if not isinstance(raw, list):
-            raise ValueError("synthetic tracks artifact must be a JSON list")
+            raise ValueError("synthetic tracks artifact must be a JSON list")  # noqa: TRY004 - artifact validation, not a Python argument error
         return [MaskTrack.model_validate(item) for item in raw]
 
 
 class SamClient:
     """Real SAM adapter consuming only official ``meta_sam_parser`` records."""
 
-    def __init__(self, client: "ModelClient", output_dir: Path) -> None:
+    def __init__(self, client: ModelClient, output_dir: Path) -> None:
         self.client = client
         self.output_dir = Path(output_dir)
 
-    def _recover_with_box(self, video_path: Path, phrase: str, records: Iterable[Any], width: int, height: int) -> list[Any]:
+    def _recover_with_box(
+        self, video_path: Path, phrase: str, records: Iterable[Any], width: int, height: int
+    ) -> list[Any]:
         boxes = [record for record in records if getattr(record, "kind", None) == "box"]
         if not boxes:
             return []
@@ -260,11 +267,12 @@ class SamClient:
         }
         try:
             return _records(self.client.sam_request(video_path, phrase, box_prompt=payload))
-        except Exception:
+        except Exception:  # noqa: BLE001 - failed final recovery drops only the affected target
             return []
 
     def track(self, video_path: Path, objects: ObjectList) -> list[MaskTrack]:
         from splatsam.authorization import require_live
+
         require_live("B1", video_path)
         video_path = Path(video_path)
         video_frames, fps = video_info(video_path)
@@ -299,10 +307,16 @@ class SamClient:
                     ys, xs = np.nonzero(raster)
                     if not len(xs):
                         continue
-                    observations[index].append(InstanceObservation(index, (float(xs.mean()), float(ys.mean())), len(xs), source_id, raster))
+                    observations[index].append(
+                        InstanceObservation(
+                            index, (float(xs.mean()), float(ys.mean())), len(xs), source_id, raster
+                        )
+                    )
                 except (ValueError, TypeError, AttributeError):
                     continue
-            associated = associate_instances([observations[i] for i in sorted(observations)], width, phrase=info.id)
+            associated = associate_instances(
+                [observations[i] for i in sorted(observations)], width, phrase=info.id
+            )
             decoded = []
             for instance in associated:
                 if not instance.observations:
@@ -315,18 +329,42 @@ class SamClient:
                         continue
                     raster = _paste_parsed_mask(record, height, width)
                     safe_object = sha256(info.id.encode("utf-8")).hexdigest()[:16]
-                    path = self.output_dir / "masks" / safe_object / source_id / f"frame_{observation.frame_index:06d}.png"
+                    path = (
+                        self.output_dir
+                        / "masks"
+                        / safe_object
+                        / source_id
+                        / f"frame_{observation.frame_index:06d}.png"
+                    )
                     path.parent.mkdir(parents=True, exist_ok=True)
                     imageio.imwrite(path, (raster * 255).astype(np.uint8))
-                    samples.append(_frame_from_mask(frame_index=observation.frame_index, timestamp_s=observation.frame_index/fps, mask=raster, path=path))
+                    samples.append(
+                        _frame_from_mask(
+                            frame_index=observation.frame_index,
+                            timestamp_s=observation.frame_index / fps,
+                            mask=raster,
+                            path=path,
+                        )
+                    )
                 diagnostics = list(instance.diagnostics)
                 if len({o.source_id for o in instance.observations}) > 1:
                     diagnostics.append("parser_id_changed_motion_association")
-                track = MaskTrack(id=f"{info.id}:{source_id}", name=info.name, frames=samples, image_width=width, image_height=height, total_frames=video_frames, source="live", diagnostics=diagnostics)
+                track = MaskTrack(
+                    id=f"{info.id}:{source_id}",
+                    name=info.name,
+                    frames=samples,
+                    image_width=width,
+                    image_height=height,
+                    total_frames=video_frames,
+                    source="live",
+                    diagnostics=diagnostics,
+                )
                 stable, reasons = stability_gate(track)
                 decoded.append(track.model_copy(update={"stable": stable, "diagnostics": reasons}))
-            decoded.sort(key=lambda t: (not t.stable, t.frames[0].centroid[0] if t.frames else float("inf"), t.id))
-            return decoded[:info.count]
+            decoded.sort(
+                key=lambda t: (not t.stable, t.frames[0].centroid[0] if t.frames else float("inf"), t.id)
+            )
+            return decoded[: info.count]
 
         for info in phrases.values():
             records: list[Any] = []
@@ -339,21 +377,43 @@ class SamClient:
                     if attempt == 0:
                         records = _records(self.client.sam_request(video_path, info.name))
                     elif attempt == 1:
-                        records = _records(self.client.sam_request(video_path, _refined_phrase(self.client, info)))
+                        records = _records(
+                            self.client.sam_request(video_path, _refined_phrase(self.client, info))
+                        )
                     else:
                         records = self._recover_with_box(video_path, info.name, records, width, height)
                     candidates = decode(info, records)
                     if candidates and all(t.stable for t in candidates):
                         break
-                except Exception as error:
+                except Exception as error:  # noqa: BLE001 - retain explicit per-target diagnostics instead of aborting the scene
                     errors.append(type(error).__name__)
             if not candidates:
-                candidates = [MaskTrack(id=info.id, name=info.name, frames=[], image_width=width, image_height=height, total_frames=video_frames, source="fallback", stable=False, diagnostics=["dropped_no_usable_masks", *errors])]
+                candidates = [
+                    MaskTrack(
+                        id=info.id,
+                        name=info.name,
+                        frames=[],
+                        image_width=width,
+                        image_height=height,
+                        total_frames=video_frames,
+                        source="fallback",
+                        stable=False,
+                        diagnostics=["dropped_no_usable_masks", *errors],
+                    )
+                ]
             for candidate in candidates:
                 if not candidate.stable and candidate.frames:
-                    candidate = candidate.model_copy(update={"diagnostics": candidate.diagnostics + ["clutter_only_unreliable_identity"]})
+                    candidate = candidate.model_copy(
+                        update={"diagnostics": candidate.diagnostics + ["clutter_only_unreliable_identity"]}
+                    )
                 tracks.append(candidate)
-            self.client._trajectory(provenance="tracking_decision", stage="sam_stability", model="sam-3.1", request={"object": info.id}, response=[{"id":t.id,"stable":t.stable,"diagnostics":t.diagnostics} for t in candidates])
+            self.client._trajectory(
+                provenance="tracking_decision",
+                stage="sam_stability",
+                model="sam-3.1",
+                request={"object": info.id},
+                response=[{"id": t.id, "stable": t.stable, "diagnostics": t.diagnostics} for t in candidates],
+            )
         return tracks
 
 
@@ -402,7 +462,16 @@ def save_overlays(video_path: Path, tracks: list[MaskTrack], out_dir: Path) -> P
             colour = np.asarray(_colour(track.id), dtype=np.uint8)
             overlay[mask] = (0.55 * overlay[mask] + 0.45 * colour).astype(np.uint8)
             left, top, _, _ = frame.box
-            cv2.putText(overlay, track.id, (int(left), max(14, int(top) - 3)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, tuple(int(v) for v in colour), 1, cv2.LINE_AA)
+            cv2.putText(
+                overlay,
+                track.id,
+                (int(left), max(14, int(top) - 3)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                tuple(int(v) for v in colour),
+                1,
+                cv2.LINE_AA,
+            )
             timestamps.append(frame.timestamp_s)
         rendered.append(overlay)
     if not rendered:

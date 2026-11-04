@@ -4,6 +4,7 @@ import sys
 import threading
 import types
 from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from splatsam.curriculum.sampler import split_scenarios
@@ -15,14 +16,34 @@ from splatsam.utils import load_json, save_json
 
 
 def _scene() -> SceneSpec:
-    return SceneSpec(objects=[
-        ObjectSpec(id="target", name="target", shape="box", size=(.08, .04, .03), position=(-.12, 0, .015), mass=.1, friction=.5),
-        ObjectSpec(id="other", name="other", shape="sphere", size=(.04, .04, .04), position=(.12, 0, .02), mass=.03, friction=.8),
-    ])
+    return SceneSpec(
+        objects=[
+            ObjectSpec(
+                id="target",
+                name="target",
+                shape="box",
+                size=(0.08, 0.04, 0.03),
+                position=(-0.12, 0, 0.015),
+                mass=0.1,
+                friction=0.5,
+            ),
+            ObjectSpec(
+                id="other",
+                name="other",
+                shape="sphere",
+                size=(0.04, 0.04, 0.04),
+                position=(0.12, 0, 0.02),
+                mass=0.03,
+                friction=0.8,
+            ),
+        ]
+    )
 
 
 def _result(seed: int, success: bool) -> EpisodeResult:
-    return EpisodeResult(seed=seed, target_id="target", success=success, failure_mode=None if success else "slip_or_drop")
+    return EpisodeResult(
+        seed=seed, target_id="target", success=success, failure_mode=None if success else "slip_or_drop"
+    )
 
 
 def test_public_splits_are_disjoint_and_holdout_is_private():
@@ -79,8 +100,15 @@ def test_final_runs_paired_evaluations_once_with_fake_evaluator(tmp_path, monkey
     def evaluate(_scene, scenarios, params, workers=4):
         calls.append(params.hash)
         success = params == final
-        return [EpisodeResult(seed=spec.seed, target_id=spec.target_id, success=success,
-                              failure_mode=None if success else "slip_or_drop") for spec in scenarios]
+        return [
+            EpisodeResult(
+                seed=spec.seed,
+                target_id=spec.target_id,
+                success=success,
+                failure_mode=None if success else "slip_or_drop",
+            )
+            for spec in scenarios
+        ]
 
     episode.evaluate = evaluate
     monkeypatch.setitem(sys.modules, "splatsam.sim", package)
@@ -91,6 +119,7 @@ def test_final_runs_paired_evaluations_once_with_fake_evaluator(tmp_path, monkey
     assert (root / "results" / "final_test.json").is_file()
     with pytest.raises(SealError, match="already exists"):
         run_final(scene, family, baseline, final, root, tmp_path / "run", workers=1)
+
 
 def test_concurrent_final_calls_allow_only_one_claim(tmp_path, monkeypatch):
     scene, family, baseline = _scene(), ScenarioFamily(), PlannerParams()
@@ -104,8 +133,12 @@ def test_concurrent_final_calls_allow_only_one_claim(tmp_path, monkeypatch):
     def evaluate(_scene, scenarios, params, workers=4):
         entered.set()
         release.wait(timeout=2)
-        return [EpisodeResult(seed=spec.seed, target_id=spec.target_id, success=False,
-                              failure_mode="slip_or_drop") for spec in scenarios]
+        return [
+            EpisodeResult(
+                seed=spec.seed, target_id=spec.target_id, success=False, failure_mode="slip_or_drop"
+            )
+            for spec in scenarios
+        ]
 
     episode.evaluate = evaluate
     monkeypatch.setitem(sys.modules, "splatsam.sim", package)
@@ -126,9 +159,9 @@ def test_wilson_summary_and_paired_statistics():
     assert summary["n"] == 4
     assert summary["successes"] == 1
     assert summary["failure_modes"]["slip_or_drop"] == 3
-    assert summary["ci95"][0] < .25 < summary["ci95"][1]
+    assert summary["ci95"][0] < 0.25 < summary["ci95"][1]
     paired = compare(baseline, final)
-    assert paired["gain"] == .5
+    assert paired["gain"] == 0.5
     assert paired["gain_ci95"][0] <= paired["gain"] <= paired["gain_ci95"][1]
 
 

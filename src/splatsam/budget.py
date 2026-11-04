@@ -1,21 +1,22 @@
 """File-locked, conservative accounting for Meta development spend."""
+
 from __future__ import annotations
 
-from contextlib import contextmanager
-from decimal import Decimal, InvalidOperation
 import fcntl
 import json
 import os
-from pathlib import Path
 import tempfile
-from typing import Any, Iterator
+from collections.abc import Iterator
+from contextlib import contextmanager
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from splatsam.utils import config
 
-
-_ZERO = Decimal("0")
-_MILLION = Decimal("1000000")
+_ZERO = Decimal(0)
+_MILLION = Decimal(1000000)
 
 
 class BudgetExceeded(RuntimeError):
@@ -48,9 +49,9 @@ class BudgetTracker:
         return path / "runs" / "meta_budget.json"
 
     @staticmethod
-    def _decimal(value: Decimal | float | str | int, field: str) -> Decimal:
+    def _decimal(value: Decimal | float | str, field: str) -> Decimal:
         if isinstance(value, bool):
-            raise ValueError(f"{field} must be numeric, not boolean")
+            raise ValueError(f"{field} must be numeric, not boolean")  # noqa: TRY004 - unified budget-domain validation
         try:
             amount = Decimal(str(value))
         except (InvalidOperation, ValueError) as error:
@@ -94,7 +95,7 @@ class BudgetTracker:
         except (OSError, json.JSONDecodeError) as error:
             raise RuntimeError(f"budget ledger is unreadable: {self.path}") from error
         if not isinstance(raw, dict):
-            raise RuntimeError(f"budget ledger is invalid: {self.path}")
+            raise RuntimeError(f"budget ledger is invalid: {self.path}")  # noqa: TRY004 - persisted ledger corruption
         committed = raw.get("committed_by_phase", {})
         reservations = raw.get("reservations", {})
         dispatch_blocked = raw.get("dispatch_blocked", False)
@@ -103,17 +104,17 @@ class BudgetTracker:
             or not isinstance(reservations, dict)
             or not isinstance(dispatch_blocked, bool)
         ):
-            raise RuntimeError(f"budget ledger is invalid: {self.path}")
+            raise RuntimeError(f"budget ledger is invalid: {self.path}")  # noqa: TRY004 - persisted ledger corruption
         # Validate monetary fields before deciding a cap; corrupted values must
         # never accidentally reopen the spending gate.
         for phase, amount in committed.items():
             self._decimal(amount, f"committed_by_phase[{phase!r}]")
         for reservation_id, reservation in reservations.items():
             if not isinstance(reservation, dict):
-                raise RuntimeError(f"budget reservation {reservation_id!r} is invalid")
+                raise RuntimeError(f"budget reservation {reservation_id!r} is invalid")  # noqa: TRY004 - persisted ledger corruption
             self._decimal(reservation.get("reserved_usd"), f"reservation {reservation_id!r}")
             if not isinstance(reservation.get("phase"), str):
-                raise RuntimeError(f"budget reservation {reservation_id!r} has no phase")
+                raise RuntimeError(f"budget reservation {reservation_id!r} has no phase")  # noqa: TRY004 - persisted ledger corruption
         return {
             "version": 1,
             "committed_by_phase": {str(key): str(value) for key, value in committed.items()},
@@ -194,15 +195,18 @@ class BudgetTracker:
         committed, pending = self._totals(ledger)
         total = sum(committed.values(), _ZERO) + sum(pending.values(), _ZERO)
         budget = self._settings["budget"]
-        development_cap = min(self._decimal(budget["development_usd"], "development cap"), Decimal("50"))
-        reserve = max(self._decimal(budget["reserve_usd"], "reserve"), Decimal("70"))
+        development_cap = min(self._decimal(budget["development_usd"], "development cap"), Decimal(50))
+        reserve = max(self._decimal(budget["reserve_usd"], "reserve"), Decimal(70))
         initial = self._decimal(budget["initial_usd"], "initial budget")
         if total > development_cap:
             raise BudgetExceeded(f"development budget exceeded: ${total} > ${development_cap}")
         if total > initial - reserve:
             raise BudgetExceeded(f"required reserve breached: ${total} > ${initial - reserve}")
         configured_phase_cap = budget.get("phase_a_usd", 10)
-        phase_cap = min(self._decimal(10 if configured_phase_cap is None else configured_phase_cap, "phase A cap"), Decimal("10"))
+        phase_cap = min(
+            self._decimal(10 if configured_phase_cap is None else configured_phase_cap, "phase A cap"),
+            Decimal(10),
+        )
         phase_total = committed.get("A", _ZERO) + pending.get("A", _ZERO)
         if phase_total > phase_cap:
             raise BudgetExceeded(f"Phase A budget exceeded: ${phase_total} > ${phase_cap}")
@@ -210,9 +214,7 @@ class BudgetTracker:
     @staticmethod
     def _assert_dispatch_open(ledger: dict[str, Any]) -> None:
         if ledger["dispatch_blocked"]:
-            raise BudgetExceeded(
-                "dispatch is blocked after a provider reported cost above its reservation"
-            )
+            raise BudgetExceeded("dispatch is blocked after a provider reported cost above its reservation")
 
     def reserve(
         self,

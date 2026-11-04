@@ -1,15 +1,16 @@
 """Native MuJoCo scenes for the floating parallel-jaw evaluation hand."""
+
 from __future__ import annotations
 
-from math import cos, sin, sqrt
 import re
-from typing import Iterable
+from collections.abc import Iterable
+from math import cos, sin, sqrt
 
 # Rendering config must be applied before MuJoCo is imported anywhere in this process.
 from splatsam import rendering as _rendering  # noqa: F401
 from splatsam.llm.schemas import ObjectSpec, ScenarioSpec, SceneSpec
 
-import mujoco
+import mujoco  # isort: skip
 
 
 DT = 0.002

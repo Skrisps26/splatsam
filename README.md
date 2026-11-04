@@ -1,19 +1,125 @@
 # Splatsam
 
-Video-to-MuJoCo workspace reconstruction and honest grasp-planner evaluation.
+**A desk video → an estimated physics scene → an honestly evaluated grasp planner.**
 
-Simulation only: a floating two-finger hand (no arm or inverse kinematics), and a rule-based planner with tunable parameters—not a trained neural policy. No real-robot transfer claims.
+Built for the Meta Global AI Developer Hackathon, Indie track / Push the Frontier. This is **simulation only**: a floating two-finger hand, no arm or inverse kinematics, and a **rule-based planner with tunable parameters—not a trained neural policy**. No real-robot transfer is claimed.
 
-## Run offline
+## Run the offline demo
 
-Install [uv](https://docs.astral.sh/uv/), GNU make and Mesa software rendering (Linux: libOSMesa). Then:
+Prerequisites: Linux, [uv](https://docs.astral.sh/uv/), GNU make and a working Mesa OpenGL implementation. The project selects software OSMesa when installed, otherwise software EGL/llvmpipe. Python 3.12 and Python dependencies are managed by uv.
 
 ```sh
+git clone https://github.com/Skrisps26/splatsam.git
+cd splatsam
 make setup && make demo
 ```
 
-`make synth-demo` generates synthetic video, ground-truth mock segmentation, reconstruction, curriculum, validation-gated edits and a sealed synthetic test report. `make test` runs the behavioral suite. No model key/GPU is needed. Generated data lives in `data_synth/`; real video/private measurements in ignored `data/`.
+Open **http://127.0.0.1:8501**. The 1.3 MB committed synthetic bundle is local, hash-verified, and requires **no API key, model weights or GPU**. Setup may download ordinary dependencies, not model weights. `STREAMLIT_SERVER_PORT=8502 make demo` changes the local port when necessary.
 
-Phase A stops at readiness. Real-video calls, the real seal and real final test require the user's separate `go` and action confirmations. GPU reconstruction is optional and additionally spend-gated. Never commit raw video or credentials.
+| Command | Behavior |
+| --- | --- |
+| `make setup` | Synchronize locked Python 3.12 dependencies; create ignored `data/videos/` |
+| `make test` | Behavioral tests, including actual MuJoCo grasps and renderer checks |
+| `make synth-demo` | Generate a synthetic video, reconstruct from mock segmentation, improve on train/validation, run a one-shot synthetic sealed test, write report |
+| `make demo` | Load verified cached artifacts and launch the read-only dashboard |
+| `make final-test RUN_DIR=... DATA_ROOT=...` | Explicit one-shot final evaluator; real input requires Phase B authorization |
 
-API contracts and verification status: [docs/api_notes.md](docs/api_notes.md). Library choices: [docs/decisions.md](docs/decisions.md).
+`make synth-demo` writes `runs/synth-demo/report.json` and `report.md`. Identical reruns verify and reuse outcomes instead of evaluating the sealed set again. Changed simulation/reconstruction inputs receive a separate synthetic revision; old evidence is retained. The real one-shot marker cannot be bypassed by changing a run ID.
+
+Optional mesh decomposition: `uv sync --extra mesh` installs CoACD. Native primitives do not need it.
+
+## Current evidence: synthetic illustration only
+
+The generated 12-second source video contains an A4 sheet, two boxes, one sphere and two horizontal cylinders. MuJoCo supplies ground-truth segmentation masks through `MockSamClient`; reconstruction receives masks and semantic height/material priors, **not hidden scene positions or sizes**. Planar accuracy is checked independently against the generator's isolated truth afterward.
+
+| Planner on 200 paired sealed synthetic scenarios | Success | Wilson 95% interval |
+| --- | ---: | --- |
+| Simple default settings | 69 / 200 = 34.5% | 28.3%–41.3% |
+| Validation-selected final settings | 95 / 200 = 47.5% | 40.7%–54.4% |
+
+Paired gain: **13.0 percentage points**, paired-bootstrap 95% interval **8.5–17.5 points**. Six parameter patches were evaluated, three accepted; the loop stopped after three consecutive rejections. The final grip safety factor is 2.4 versus the default 1.2. Proposals and critic calls in this run are explicitly **mocked**, not live Meta usage.
+
+- Independent scale error: **0.251%**; largest planar size error: **8.13%**.
+- Object footprint IoUs: **0.901–0.991**. The ball is a sphere; markers are rolling horizontal cylinders.
+- Train/validation/test: **150 / 100 / 200** concrete scenarios from disjoint seed ranges.
+- Validation: **1,200** planner-scenario evaluations, **700** fresh simulations, on the same 100 validation seeds. Validation selected edits and is optimistic.
+- **65/200 instability failures remain for both planners.** Solver/estimated-geometry limitations are visible, not relabeled or excluded from the denominator.
+- Meta spend **$0**, GPU spend **$0**. The live format spike is blocked because `MODEL_API_KEY` is absent.
+
+Inspect the [full report](demo_data/report.md), [machine-readable report](demo_data/report.json), [sanitized trajectory](runs/evidence/trajectory.jsonl), and [write-up](docs/writeup.md). These numbers are not real-video results or evidence of real-robot transfer.
+
+## Pipeline
+
+```mermaid
+flowchart LR
+  V[Phone or synthetic video] --> F[Sample frames]
+  F --> O[Wonder semantic objects]
+  V --> S[SAM persistent masks]
+  O --> S
+  S --> H[A4 metric homography]
+  H --> P[Native primitive reconstruction]
+  P --> C[MuJoCo silhouette consistency]
+  C --> E[Estimated simulation scene]
+  E --> T[Frozen family and seeded scenarios]
+  T --> L[Train failures and bounded edits]
+  L --> G[Paired validation gate]
+  G --> L
+  G --> X[One-shot sealed comparison]
+  X --> R[Report and read-only dashboard]
+```
+
+Muse Wonder 1.0 handles scene semantics, family design and parameter proposals; Muse Spark 1.3 handles optional ambiguous-failure diagnoses; SAM 3.1 supplies masks through Files + Responses. The official OpenAI SDK uses Meta's explicit URL/key, and `meta-sam-parser` handles the token grammar. **The simulator—not an LLM—scores success and failure.** Synthetic mode follows the same data contracts with typed mocks and real local physics.
+
+The free hand is dynamically welded to a gradually moved mocap target, so finger friction can physically lift objects. Success requires at least 5 cm lift throughout a 2-second stationary hold, plus finger contact at the end. Nominal estimated mass/friction determine grip force; randomized true simulator multipliers are hidden from the planner.
+
+## Mandatory Phase A / Phase B boundary
+
+Phase A builds and tests with synthetic data under `data_synth/`. It never processes real video, creates a real seal, runs the real final test, or provisions GPU resources. It stops at readiness. **Plan approval and synthetic success are not the live `go`.**
+
+### Live prerequisites and confirmations
+
+1. Supply `MODEL_API_KEY` through the environment, never chat or the repo. Verify the documented formats on a tiny synthetic clip with `uv run python scripts/spike_api.py --max-usd 10`. This is opt-in; without a key it exits blocked and spends nothing. [API notes](docs/api_notes.md) distinguish documentation, public-parser fixtures and observed live evidence.
+2. Say **go**, confirm the real video is ready in ignored `data/videos/`, and confirm it contains no personal documents, screens, mail or ID cards. B1 binds authorization to its SHA256 and produces overlays/scene only. **User mask approval is required before B2.**
+3. Confirm B2 inputs: freeze the scene/family, seal fresh `data/splits/`, run baseline and train/validation improvement. No real held-out outcomes are read here.
+4. B3 is optional and additionally spend-approved. RunPod was selected, but no RunPod MCP lifecycle route is mounted; the current workflow safely skips it and retains primitives. HF access/license and verified shutdown controls are prerequisites, never reasons to rent a resource speculatively.
+5. Confirm B4 final inputs: run the real baseline/final sealed comparison **exactly once**. `results/FINAL_TEST.started` is exclusive and remains after an interruption; the real evaluator refuses a second attempt, including with a different run ID.
+
+An operator records the user's actual confirmations in ignored `data/authorization.json`; flags are not inferred from file presence. Initial safe template:
+
+```json
+{
+  "go": false,
+  "privacy_ready": false,
+  "video_sha256": "SHA256_OF_THE_CONFIRMED_VIDEO",
+  "masks_approved": false,
+  "gpu_spend_approved": false,
+  "actions": {"B1": false, "B2": false, "B3": false, "B4": false}
+}
+```
+
+Only after those real confirmations, the operator uses `uv run python scripts/run_pipeline.py --mode live --action B1 --video data/videos/desk.mp4 --run-id real-scene` and later the separately confirmed action. The dashboard cannot create authorization or run evaluations. Optional measured overrides go in ignored `data/measured.yaml`:
+
+```yaml
+objects:
+  stable_object_id:
+    height_m: 0.025
+    mass_kg: 0.12
+    friction: 0.6
+```
+
+Valid individual measurements override estimates; malformed values are diagnosed and leave valid siblings intact.
+
+## Spending, privacy and failure handling
+
+- Shared, file-locked `runs/meta_budget.json`: **$10 Phase A**, **$50 cumulative development**, **at least $70 reserve**. Configuration can lower but cannot raise hard caps. Every attempted paid request is reserved first; unknown/failed metering is charged conservatively. SDK automatic retries are disabled.
+- Diskcache keys include request/model/schema/media content. Successful Meta and optional HTTP inference are replayable without spending. Trajectory rows record safe hashes, schema/usage, cost, latency and provenance; secrets and media payloads are excluded. The opt-in synthetic spike separately records replayable working request formats after observed success.
+- Optional GPU caps: RunPod **$4**, AWS **$25** only after its separate account/quota/credit gates, Modal no more than confirmed free credit. At most one owned resource, bounded runtime/idle watchdog policy, ledger and independent cleanup verification. **No project GPU resource was created in Phase A.**
+- The optional HTTP service's CPU `stub` returns a clearly labeled fake GLB; it is never selected as live simulation geometry. The real SAM 3D adapter is lazy, spend/phase-gated, and exports upstream `output["glb"]`; its GPU runtime has not been exercised. See [API/contract notes](docs/api_notes.md).
+- Expected stage failures leave a diagnostic report and explicit degraded/blocked state. Budgets, authorization and seals fail closed; no real scene is silently replaced with synthetic geometry.
+- Raw video, measurements, credentials, caches and transient runs are ignored. Only synthetic artifacts and sanitized submission evidence are automatically published. Raw real video requires separate explicit approval to commit.
+
+## Interpretation limits
+
+Simulation only; floating hand/no arm or IK; rule-based parameter tuning, not a neural policy; no claimed real-robot transfer. Object heights and hidden geometry are estimated, and mass/friction are estimates unless labeled measured. Footprint IoU does not validate height, mass, friction or collision geometry. Paper curl, object height and camera tilt cause scale uncertainty of a few percent; thin objects remain sensitive to raster resolution and parallax. Results are specific to the captured scene. The local hash seal guards mistakes, not a malicious repository owner.
+
+Library searches and implementation choices: [decisions](docs/decisions.md). Dashboard layout and observed surface checks: [design](DESIGN.md).

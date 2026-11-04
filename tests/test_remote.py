@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Self
 
-from fastapi.testclient import TestClient
 import numpy as np
 import pytest
+from fastapi.testclient import TestClient
 
 from splatsam.recon import gpu_client
 from splatsam.recon.gpu_client import RemoteSam3dReconstructor, StubReconstructor, validate_glb
@@ -26,7 +27,11 @@ def test_stub_server_is_authenticated_and_returns_valid_labeled_glb(monkeypatch:
     response = client.post(
         "/reconstruct",
         files={
-            "image": ("image.png", gpu_client.cv2.imencode(".png", image[..., ::-1])[1].tobytes(), "image/png"),
+            "image": (
+                "image.png",
+                gpu_client.cv2.imencode(".png", image[..., ::-1])[1].tobytes(),
+                "image/png",
+            ),
             "mask": ("mask.png", gpu_client.cv2.imencode(".png", mask * 255)[1].tobytes(), "image/png"),
         },
         data={"seed": "42"},
@@ -36,7 +41,11 @@ def test_stub_server_is_authenticated_and_returns_valid_labeled_glb(monkeypatch:
         "/reconstruct",
         headers={"Authorization": "Bearer secret"},
         files={
-            "image": ("image.png", gpu_client.cv2.imencode(".png", image[..., ::-1])[1].tobytes(), "image/png"),
+            "image": (
+                "image.png",
+                gpu_client.cv2.imencode(".png", image[..., ::-1])[1].tobytes(),
+                "image/png",
+            ),
             "mask": ("mask.png", gpu_client.cv2.imencode(".png", mask * 255)[1].tobytes(), "image/png"),
         },
         data={"seed": "42"},
@@ -60,7 +69,7 @@ class _Client:
     def __init__(self, **kwargs: object) -> None:
         self.kwargs = kwargs
 
-    def __enter__(self) -> _Client:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -71,7 +80,9 @@ class _Client:
         return type(self).response
 
 
-def test_remote_success_is_content_cached_without_any_second_http(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_remote_success_is_content_cached_without_any_second_http(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     image, mask = _inputs()
     _Client.calls = 0
     _Client.response = _Response(200, StubReconstructor().reconstruct(image, mask))
@@ -94,7 +105,9 @@ def test_remote_success_is_content_cached_without_any_second_http(tmp_path: Path
     ("response", "expected"),
     [(_Response(401, b""), "remote status 401"), (_Response(200, b"not-a-glb"), "response is not a GLB")],
 )
-def test_auth_and_invalid_mesh_fall_back(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, response: _Response, expected: str) -> None:
+def test_auth_and_invalid_mesh_fall_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, response: _Response, expected: str
+) -> None:
     image, mask = _inputs()
     _Client.calls = 0
     _Client.response = response
@@ -126,7 +139,9 @@ def test_network_error_falls_back_without_a_retry(tmp_path: Path, monkeypatch: p
     assert remote.last_provenance.source == "fallback"
 
 
-def test_stub_response_is_refused_without_explicit_allowance(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stub_response_is_refused_without_explicit_allowance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     image, mask = _inputs()
     _Client.response = _Response(200, StubReconstructor().reconstruct(image, mask), backend="stub")
     monkeypatch.setattr(gpu_client.httpx, "Client", _Client)
@@ -134,25 +149,28 @@ def test_stub_response_is_refused_without_explicit_allowance(tmp_path: Path, mon
     remote.reconstruct(image, mask)
     assert remote.last_provenance.source == "fallback"
 
-def test_stub_cache_cannot_cross_into_production_policy(tmp_path,monkeypatch):
-    image,mask=_inputs()
-    _Client.calls=0
-    _Client.response=_Response(200,StubReconstructor().reconstruct(image,mask),backend="stub")
-    monkeypatch.setattr(gpu_client.httpx,"Client",_Client)
-    allowed=RemoteSam3dReconstructor("http://local-stub","fixture-token",tmp_path,allow_stub=True)
-    allowed.reconstruct(image,mask)
-    assert allowed.last_provenance.backend=="stub"
-    _Client.response=_Response(401,b"")
-    production=RemoteSam3dReconstructor("http://remote","fixture-token",tmp_path,allow_stub=False)
-    production.reconstruct(image,mask)
-    assert production.last_provenance.source=="fallback" and _Client.calls==2
+
+def test_stub_cache_cannot_cross_into_production_policy(tmp_path, monkeypatch):
+    image, mask = _inputs()
+    _Client.calls = 0
+    _Client.response = _Response(200, StubReconstructor().reconstruct(image, mask), backend="stub")
+    monkeypatch.setattr(gpu_client.httpx, "Client", _Client)
+    allowed = RemoteSam3dReconstructor("http://local-stub", "fixture-token", tmp_path, allow_stub=True)
+    allowed.reconstruct(image, mask)
+    assert allowed.last_provenance.backend == "stub"
+    _Client.response = _Response(401, b"")
+    production = RemoteSam3dReconstructor("http://remote", "fixture-token", tmp_path, allow_stub=False)
+    production.reconstruct(image, mask)
+    assert production.last_provenance.source == "fallback" and _Client.calls == 2
+
 
 def test_real_backend_cannot_initialize_in_phase_a(monkeypatch):
-    from splatsam.recon.sam3d_backend import Sam3dBackend
     from splatsam.recon.gpu_client import ReconstructionError
-    monkeypatch.delenv("SPLATSAM_PHASE",raising=False)
-    monkeypatch.setenv("SPLATSAM_GPU_APPROVED","1")
-    backend=Sam3dBackend()
+    from splatsam.recon.sam3d_backend import Sam3dBackend
+
+    monkeypatch.delenv("SPLATSAM_PHASE", raising=False)
+    monkeypatch.setenv("SPLATSAM_GPU_APPROVED", "1")
+    backend = Sam3dBackend()
     assert backend.availability()[0] is False
-    with pytest.raises(ReconstructionError,match="Phase B"):
-        backend.reconstruct(*_inputs(),seed=42)
+    with pytest.raises(ReconstructionError, match="Phase B"):
+        backend.reconstruct(*_inputs(), seed=42)

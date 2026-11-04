@@ -155,9 +155,14 @@ def render_run_status(report: Mapping[str, Any], run_dir: Path, viewer_mode: str
     if stage_text:
         st.caption(f"Completed stages: {stage_text}")
     if mode == "synthetic" or report.get("illustrative_only") is True:
-        st.markdown('<span class="synthetic-badge">SYNTHETIC ILLUSTRATION — NOT REAL-VIDEO EVIDENCE</span>', unsafe_allow_html=True)
+        st.markdown(
+            '<span class="synthetic-badge">SYNTHETIC ILLUSTRATION — NOT REAL-VIDEO EVIDENCE</span>',
+            unsafe_allow_html=True,
+        )
     elif mode == "live":
-        st.caption("Live artifact viewer only. This page cannot dispatch inference, provision GPU, or run a final test.")
+        st.caption(
+            "Live artifact viewer only. This page cannot dispatch inference, provision GPU, or run a final test."
+        )
 
 
 def render_media(run_dir: Path) -> None:
@@ -172,7 +177,9 @@ def render_media(run_dir: Path) -> None:
         if media_choice == "Tracked overlay"
         else first_existing(run_dir, ("source.png",))
     )
-    source_label = "Persistent-ID tracking overlay" if media_choice == "Tracked overlay" else "Selected source frame"
+    source_label = (
+        "Persistent-ID tracking overlay" if media_choice == "Tracked overlay" else "Selected source frame"
+    )
     left, right = st.columns(2, gap="large")
     with left:
         if source_asset and source_asset.suffix.lower() == ".mp4":
@@ -181,7 +188,9 @@ def render_media(run_dir: Path) -> None:
             image_or_notice(source_asset, source_label)
     with right:
         image_or_notice(first_existing(run_dir, ("sim.png",)), "Reconstructed simulation scene")
-    st.caption("The left artifact is perception evidence; the right is an estimated simulation, not a real-world replay. Primitive colors identify objects, not recovered textures.")
+    st.caption(
+        "The left artifact is perception evidence; the right is an estimated simulation, not a real-world replay. Primitive colors identify objects, not recovered textures."
+    )
 
 
 def render_held_out(report: Mapping[str, Any]) -> None:
@@ -190,7 +199,9 @@ def render_held_out(report: Mapping[str, Any]) -> None:
     baseline = as_mapping(held_out.get("baseline"))
     final = as_mapping(held_out.get("final"))
     if not baseline or not final:
-        st.warning("Final test not completed. Sealed baseline/final metrics are unavailable rather than treated as zero.")
+        st.warning(
+            "Final test not completed. Sealed baseline/final metrics are unavailable rather than treated as zero."
+        )
         return
 
     rows = []
@@ -208,7 +219,9 @@ def render_held_out(report: Mapping[str, Any]) -> None:
     gain = number(held_out.get("gain"))
     gain_ci = held_out.get("gain_ci95")
     if gain is not None:
-        st.markdown(f"**Paired gain:** {percent(gain)} &nbsp; **Paired bootstrap 95% CI:** {interval(gain_ci)}")
+        st.markdown(
+            f"**Paired gain:** {percent(gain)} &nbsp; **Paired bootstrap 95% CI:** {interval(gain_ci)}"
+        )
     else:
         st.caption("Paired gain was not reported.")
     measurement = report.get("measurement")
@@ -218,7 +231,9 @@ def render_held_out(report: Mapping[str, Any]) -> None:
 
 def render_validation(report: Mapping[str, Any]) -> None:
     st.subheader("Validation selection evidence")
-    st.caption("Validation selected edits and is optimistic by design. It is separate from the sealed held-out measurement above.")
+    st.caption(
+        "Validation selected edits and is optimistic by design. It is separate from the sealed held-out measurement above."
+    )
     rounds = [as_mapping(item) for item in as_list(report.get("rounds")) if isinstance(item, Mapping)]
     if not rounds:
         st.info("No completed validation rounds are available in this artifact.")
@@ -229,16 +244,20 @@ def render_validation(report: Mapping[str, Any]) -> None:
     candidate = [number(as_mapping(item.get("candidate_validation")).get("success_rate")) for item in rounds]
     figure = go.Figure()
     if any(value is not None for value in incumbent):
-        figure.add_trace(go.Scatter(x=round_numbers, y=incumbent, mode="lines+markers", name="Incumbent validation"))
+        figure.add_trace(
+            go.Scatter(x=round_numbers, y=incumbent, mode="lines+markers", name="Incumbent validation")
+        )
     if any(value is not None for value in candidate):
-        figure.add_trace(go.Scatter(x=round_numbers, y=candidate, mode="lines+markers", name="Candidate validation"))
+        figure.add_trace(
+            go.Scatter(x=round_numbers, y=candidate, mode="lines+markers", name="Candidate validation")
+        )
     figure.update_layout(
         title="Validation rounds — optimistic selection evidence, not held-out",
         height=320,
-        margin=dict(l=10, r=10, t=48, b=100),
-        yaxis=dict(tickformat=".0%", rangemode="tozero", title="Success rate"),
-        xaxis=dict(title="Round", dtick=1),
-        legend=dict(orientation="h", yanchor="top", y=-0.28, xanchor="left", x=0),
+        margin={"l": 10, "r": 10, "t": 48, "b": 100},
+        yaxis={"tickformat": ".0%", "rangemode": "tozero", "title": "Success rate"},
+        xaxis={"title": "Round", "dtick": 1},
+        legend={"orientation": "h", "yanchor": "top", "y": -0.28, "xanchor": "left", "x": 0},
     )
     st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
 
@@ -277,15 +296,19 @@ def render_failure_breakdown(report: Mapping[str, Any]) -> None:
     if not labels:
         return
     figure = go.Figure()
-    figure.add_trace(go.Bar(name="Baseline", x=labels, y=[number(baseline_failures.get(label)) for label in labels]))
-    figure.add_trace(go.Bar(name="Final", x=labels, y=[number(final_failures.get(label)) for label in labels]))
+    figure.add_trace(
+        go.Bar(name="Baseline", x=labels, y=[number(baseline_failures.get(label)) for label in labels])
+    )
+    figure.add_trace(
+        go.Bar(name="Final", x=labels, y=[number(final_failures.get(label)) for label in labels])
+    )
     figure.update_layout(
         title="Held-out failure distribution",
         barmode="group",
         height=330,
-        margin=dict(l=10, r=10, t=48, b=100),
-        yaxis=dict(title="Episodes", rangemode="tozero"),
-        legend=dict(orientation="h", yanchor="top", y=-0.28, xanchor="left", x=0),
+        margin={"l": 10, "r": 10, "t": 48, "b": 100},
+        yaxis={"title": "Episodes", "rangemode": "tozero"},
+        legend={"orientation": "h", "yanchor": "top", "y": -0.28, "xanchor": "left", "x": 0},
     )
     st.plotly_chart(figure, use_container_width=True, config={"displayModeBar": False})
 
@@ -315,7 +338,9 @@ def render_geometry(report: Mapping[str, Any], run_dir: Path) -> None:
                     "Footprint IoU": percent(item.get("consistency_iou"), 1),
                     "Reconstruction": item.get("reconstruction_source", "Not reported"),
                     "Dimensions (m)": size_text or "Not reported",
-                    "Mass (kg)": f"{number(item.get('mass_kg')):.4f}" if number(item.get("mass_kg")) is not None else "Not reported",
+                    "Mass (kg)": f"{number(item.get('mass_kg')):.4f}"
+                    if number(item.get("mass_kg")) is not None
+                    else "Not reported",
                     "Mass source": item.get("mass_source", "Not reported"),
                     "Friction": str(item.get("friction", "Not reported")),
                     "Friction source": item.get("friction_source", "Not reported"),
@@ -326,11 +351,19 @@ def render_geometry(report: Mapping[str, Any], run_dir: Path) -> None:
     else:
         st.info("No per-object reconstruction evidence is available in this artifact.")
 
-    comparison_paths = sorted((run_dir / "consistency").glob("*_comparison.png")) if (run_dir / "consistency").is_dir() else []
+    comparison_paths = (
+        sorted((run_dir / "consistency").glob("*_comparison.png"))
+        if (run_dir / "consistency").is_dir()
+        else []
+    )
     if comparison_paths:
         choices = {path.stem.removesuffix("_comparison"): path for path in comparison_paths}
         selected = st.selectbox("Object silhouette comparison", list(choices), key="comparison_object")
-        st.image(str(choices[selected]), caption=f"Observed and fitted footprint comparison: {selected}", use_container_width=True)
+        st.image(
+            str(choices[selected]),
+            caption=f"Observed and fitted footprint comparison: {selected}",
+            use_container_width=True,
+        )
 
 
 def render_grasp_and_trace(run_dir: Path) -> None:
@@ -383,13 +416,17 @@ def main() -> None:
         unsafe_allow_html=True,
     )
     st.title("Splatsam")
-    st.caption("A read-only laboratory notebook for video-derived scene evidence, simulation, and sealed grasp measurements.")
+    st.caption(
+        "A read-only laboratory notebook for video-derived scene evidence, simulation, and sealed grasp measurements."
+    )
 
     discovered = discover_runs(DEFAULT_RUN_DIR)
     report_lookup = {run_dir: read_report(run_dir, refresh_live=False) for run_dir in discovered}
     usable = [run_dir for run_dir in discovered if report_lookup.get(run_dir) is not None]
     if not usable:
-        st.warning("No completed report artifact is available. Run `make synth-demo` to create the local synthetic evidence bundle.")
+        st.warning(
+            "No completed report artifact is available. Run `make synth-demo` to create the local synthetic evidence bundle."
+        )
         st.caption("This viewer does not create runs, dispatch models, provision GPU, or run final tests.")
         return
 
@@ -429,7 +466,9 @@ def main() -> None:
     def render_selected() -> None:
         report = read_report(selected_run, refresh_live=viewer_mode == "Live artifact refresh")
         if report is None:
-            st.error("The selected artifact is not readable. Choose another run or refresh after the writer completes.")
+            st.error(
+                "The selected artifact is not readable. Choose another run or refresh after the writer completes."
+            )
             return
         render_run_status(report, selected_run, viewer_mode)
         render_media(selected_run)
@@ -438,14 +477,22 @@ def main() -> None:
         with metadata_left:
             st.caption(f"Scene hash: `{short_hash(report.get('scene_hash'))}`")
         with metadata_right:
-            st.caption(f"Recorded spend — Meta: {money(costs.get('meta_usd'))}; GPU: {money(costs.get('gpu_usd'))}")
+            st.caption(
+                f"Recorded spend — Meta: {money(costs.get('meta_usd'))}; GPU: {money(costs.get('gpu_usd'))}"
+            )
         render_held_out(report)
         render_failure_breakdown(report)
         render_validation(report)
         render_geometry(report, selected_run)
         render_grasp_and_trace(selected_run)
-        st.download_button("Download report JSON", data=(selected_run / "report.json").read_bytes(), file_name=f"{selected_run.name}-report.json", mime="application/json")
+        st.download_button(
+            "Download report JSON",
+            data=(selected_run / "report.json").read_bytes(),
+            file_name=f"{selected_run.name}-report.json",
+            mime="application/json",
+        )
         render_limits(report)
+
     render_selected()
 
 

@@ -3,24 +3,25 @@
 The fit intentionally validates only visible footprints.  It never treats a 2-D
 silhouette as evidence for object height, mass, friction, or collision shape.
 """
+
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from math import radians
 from pathlib import Path
-from typing import Iterable
 
 import cv2
 import imageio.v3 as iio
-import mujoco
+
+import mujoco  # isort: skip
 import numpy as np
 
 from splatsam import rendering
 from splatsam.llm.schemas import MaskFrame, MaskTrack, ObjectSpec, SceneSpec
 from splatsam.perception.reference import ReferenceResult
-from splatsam.sim.scene import geom_name, build_model
+from splatsam.sim.scene import build_model, geom_name
 from splatsam.utils import save_json
-
 
 FIT_THRESHOLD = 0.60
 _YAW_DELTAS = (0.0, -5.0, 5.0, -10.0, 10.0)
@@ -68,7 +69,9 @@ def _original_coordinates(scene: SceneSpec, object_spec: ObjectSpec) -> ObjectSp
     )
 
 
-def _isolated_model(scene: SceneSpec, object_spec: ObjectSpec) -> tuple[mujoco.MjModel, int, mujoco.MjvOption]:
+def _isolated_model(
+    scene: SceneSpec, object_spec: ObjectSpec
+) -> tuple[mujoco.MjModel, int, mujoco.MjvOption]:
     """Build a real MuJoCo model that renders precisely one object's geom."""
     original = _original_coordinates(scene, object_spec)
     model = build_model(scene.model_copy(update={"objects": [original]}))
@@ -134,7 +137,9 @@ def _segmentation_mask(
     return ((segmentation[..., 0] == target_geom) & geom_pixels).astype(np.uint8)
 
 
-def _render_isolated_mask(scene: SceneSpec, object_spec: ObjectSpec, reference: ReferenceResult) -> np.ndarray:
+def _render_isolated_mask(
+    scene: SceneSpec, object_spec: ObjectSpec, reference: ReferenceResult
+) -> np.ndarray:
     """Render one physical primitive into the same full metric grid as observations."""
     model, target_geom, option = _isolated_model(scene, object_spec)
     return _segmentation_mask(model, mujoco.MjData(model), target_geom, reference, option)
@@ -159,7 +164,9 @@ def _track_for_object(object_spec: ObjectSpec, tracks: Iterable[MaskTrack]) -> M
     return next((track for track in stable_tracks if track.id.split(":", 1)[0] == base), None)
 
 
-def _observed_mask(object_spec: ObjectSpec, tracks: Iterable[MaskTrack], reference: ReferenceResult) -> tuple[np.ndarray | None, str]:
+def _observed_mask(
+    object_spec: ObjectSpec, tracks: Iterable[MaskTrack], reference: ReferenceResult
+) -> tuple[np.ndarray | None, str]:
     track = _track_for_object(object_spec, tracks)
     if track is None:
         return None, "no_stable_track"
@@ -199,6 +206,7 @@ def _save_mask(path: Path, mask: np.ndarray) -> None:
     if not cv2.imwrite(str(path), (mask.astype(np.uint8) * 255)):
         raise RuntimeError(f"failed writing consistency artifact {path}")
 
+
 def _save_comparison(path: Path, observed: np.ndarray, rendered: np.ndarray) -> None:
     if not cv2.imwrite(str(path), _comparison_image(observed, rendered)):
         raise RuntimeError(f"failed writing consistency artifact {path}")
@@ -229,15 +237,17 @@ def fit_scene(
             _save_mask(destination / f"{prefix}_renderedbest.png", blank)
             _save_comparison(destination / f"{prefix}_comparison.png", blank, blank)
             fitted.append(object_spec.model_copy(update={"consistency_iou": None}))
-            records.append({
-                "id": object_spec.id,
-                "status": observation_status,
-                "iou": None,
-                "source": object_spec.reconstruction_source,
-                "low_confidence": True,
-                "alternative_attempted": False,
-                "alternative_reason": "no observed stable mask",
-            })
+            records.append(
+                {
+                    "id": object_spec.id,
+                    "status": observation_status,
+                    "iou": None,
+                    "source": object_spec.reconstruction_source,
+                    "low_confidence": True,
+                    "alternative_attempted": False,
+                    "alternative_reason": "no observed stable mask",
+                }
+            )
             continue
 
         best: _FitCandidate | None = None
@@ -254,18 +264,20 @@ def fit_scene(
         _save_mask(destination / f"{prefix}_observedmask.png", observed)
         _save_mask(destination / f"{prefix}_renderedbest.png", best.mask)
         _save_comparison(destination / f"{prefix}_comparison.png", observed, best.mask)
-        records.append({
-            "id": object_spec.id,
-            "status": "low_confidence" if low_confidence else "ok",
-            "iou": best.iou,
-            "source": object_spec.reconstruction_source,
-            "fitted_yaw_rad": best.yaw,
-            "low_confidence": low_confidence,
-            "alternative_attempted": False,
-            "alternative_reason": (
-                "no other real reconstruction candidate is available" if low_confidence else "not_needed"
-            ),
-        })
+        records.append(
+            {
+                "id": object_spec.id,
+                "status": "low_confidence" if low_confidence else "ok",
+                "iou": best.iou,
+                "source": object_spec.reconstruction_source,
+                "fitted_yaw_rad": best.yaw,
+                "low_confidence": low_confidence,
+                "alternative_attempted": False,
+                "alternative_reason": (
+                    "no other real reconstruction candidate is available" if low_confidence else "not_needed"
+                ),
+            }
+        )
 
     result = scene.model_copy(update={"objects": fitted})
     save_json(

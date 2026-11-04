@@ -1,4 +1,5 @@
 """Freeze and execute sealed held-out synthetic/authorized evaluations."""
+
 from __future__ import annotations
 
 import importlib.metadata
@@ -108,7 +109,12 @@ def _write_lock(path: Path, value: str) -> None:
 
 
 def _manifest_for(
-    *, scene: SceneSpec, family: ScenarioFamily, baseline: PlannerParams, scenarios: list[ScenarioSpec], real: bool
+    *,
+    scene: SceneSpec,
+    family: ScenarioFamily,
+    baseline: PlannerParams,
+    scenarios: list[ScenarioSpec],
+    real: bool,
 ) -> dict[str, Any]:
     scenario_data = [scenario.model_dump(mode="json") for scenario in scenarios]
     dependencies = _dependency_versions()
@@ -142,8 +148,13 @@ def _read_manifest(root: Path) -> tuple[dict[str, Any], list[ScenarioSpec]]:
 
 
 def _validate_manifest(
-    manifest: dict[str, Any], scenarios: list[ScenarioSpec], *, scene: SceneSpec, family: ScenarioFamily,
-    baseline: PlannerParams, real: bool,
+    manifest: dict[str, Any],
+    scenarios: list[ScenarioSpec],
+    *,
+    scene: SceneSpec,
+    family: ScenarioFamily,
+    baseline: PlannerParams,
+    real: bool,
 ) -> None:
     expected_hashes = _input_hashes(scene, family, baseline)
     if manifest.get("schema_version") != _SCHEMA_VERSION:
@@ -166,7 +177,9 @@ def _validate_manifest(
         raise SealError("frozen test scenario count changed")
 
 
-def seal_test(scene: SceneSpec, family: ScenarioFamily, baseline: PlannerParams, root: Path | str) -> dict[str, Any]:
+def seal_test(
+    scene: SceneSpec, family: ScenarioFamily, baseline: PlannerParams, root: Path | str
+) -> dict[str, Any]:
     """Create immutable concrete held-out specs without running any episodes."""
     root = _resolved(root)
     real = _guard_root(root, "B2")
@@ -181,11 +194,16 @@ def seal_test(scene: SceneSpec, family: ScenarioFamily, baseline: PlannerParams,
 
     scenarios = [sample_scenario(family, seed, scene) for seed in TEST_SEEDS]
     manifest = _manifest_for(scene=scene, family=family, baseline=baseline, scenarios=scenarios, real=real)
-    save_json(test_path, {"schema_version": _SCHEMA_VERSION, "scenarios": [item.model_dump(mode="json") for item in scenarios]})
+    save_json(
+        test_path,
+        {
+            "schema_version": _SCHEMA_VERSION,
+            "scenarios": [item.model_dump(mode="json") for item in scenarios],
+        },
+    )
     save_json(manifest_path, manifest)
     _write_lock(lock_path, digest(manifest))
     return manifest
-
 
 
 def _validate_episode_coverage(results: list[Any], scenarios: list[ScenarioSpec], label: str) -> None:
@@ -193,6 +211,7 @@ def _validate_episode_coverage(results: list[Any], scenarios: list[ScenarioSpec]
     actual = [(result.seed, result.target_id) for result in results]
     if actual != expected:
         raise SealError(f"{label} evaluation did not return every sealed scenario in stable order")
+
 
 def _result_paths(root: Path, real: bool) -> tuple[Path, Path]:
     results = ROOT / "results" if real else root / "results"
