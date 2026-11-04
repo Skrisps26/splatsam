@@ -18,7 +18,7 @@ from splatsam.utils import ROOT, config, digest, file_digest, load_json, save_js
 def print_cost(stage: str, phase='A') -> dict:
     budget=BudgetTracker(ROOT/'runs/meta_budget.json',phase=phase)
     gpu=load_json(ROOT/'runs/gpu_ledger.json') if (ROOT/'runs/gpu_ledger.json').exists() else {'total_usd':0,'resources':[]}
-    costs={'meta_usd':float(budget.total_usd),'gpu_usd':gpu.get('total_usd',0)}
+    costs={'meta_usd':float(budget.total_usd),'gpu_usd':float(gpu.get('total_usd',0))}
     print(f'[{stage}] Meta USD {costs["meta_usd"]:.4f}; GPU USD {costs["gpu_usd"]:.4f}',flush=True)
     return costs
 
@@ -116,7 +116,9 @@ def prepare_evaluation(scene,client,root,run_dir,workers):
     save_json(run_dir/'scene.json',scene); save_json(run_dir/'family.json',family); baseline.save(run_dir/'baseline_params.json')
     seal_test(scene,family,baseline,root)
     loop=improve(scene,family,baseline,client,run_dir,workers=workers)
-    print_cost('baseline and validation loop',phase='B' if scene.source=='live' else 'A')
+    costs=print_cost('baseline and validation loop',phase='B' if scene.source=='live' else 'A')
+    from splatsam.report import generate_report
+    generate_report(run_dir,scene,None,loop['history'],costs,validation_evaluations=loop['validation_evaluations'],fresh_validation_simulations=loop['fresh_validation_simulations'],stages=[{'stage':'perception','status':'ok'},{'stage':'validation-loop','status':'ok'},{'stage':'sealed-test','status':'awaiting_final_confirmation'}])
     return family,baseline,PlannerParams(**loop['final_params']),loop
 
 
@@ -201,11 +203,16 @@ def live(args):
     if video is None and (run_dir/'input.json').exists(): video=Path(load_json(run_dir/'input.json')['video_path'])
     if video is None: raise ValueError('real input video is not ready')
     require_live(args.action,video)
-    client=ModelClient(run_dir,budget=BudgetTracker(ROOT/'runs/meta_budget.json',phase='B'),live=True)
+    client=ModelClient(run_dir,budget=BudgetTracker(ROOT/'runs/meta_budget.json',phase='B'),cache_dir=ROOT/'.cache/meta',live=True)
     if args.action=='B1':
         if not client.can_dispatch: raise RuntimeError('MODEL_API_KEY absent; live SAM verification unavailable')
+        evidence=ROOT/'runs/spike-api/observed_fixture.json'
+        if not evidence.exists() or load_json(evidence).get('source')!='live_observed_synthetic_spike':
+            raise RuntimeError('Run the bounded synthetic scripts/spike_api.py format verification before sending real video')
         scene,_,_=perceive(video,client,run_dir,measured_path=ROOT/'data/measured.yaml',source='live',seed=args.seed)
         save_json(run_dir/'scene.json',scene);save_json(run_dir/'input.json',{'source':'live','video_path':str(video.resolve()),'video_sha256':file_digest(video)})
+        from splatsam.report import generate_report
+        generate_report(run_dir,scene,None,[],print_cost('B1',phase='B'),stages=[{'stage':'perception','status':'awaiting_user_mask_approval'}])
         print('B1 complete: show overlay.mp4 and WAIT for user mask approval. No seal created.',flush=True)
     elif args.action=='B2':
         scene=SceneSpec.model_validate(load_json(run_dir/'scene.json'))

@@ -82,3 +82,10 @@ def test_sam_frame_minimum_and_image_prices(tmp_path: Path) -> None:
     tracker.settle(frames)
     tracker.settle(images)
     assert tracker.total_usd == Decimal("0.0150")
+
+@pytest.mark.parametrize("phase,tokens", [("A",2_750_000),("B",12_750_000)])
+def test_configuration_can_lower_but_never_raise_hard_caps(tmp_path,phase,tokens):
+    tracker=BudgetTracker(tmp_path/"ledger.json",phase=phase)
+    tracker._settings["budget"].update(phase_a_usd=100,development_usd=1000,reserve_usd=0)
+    with pytest.raises(BudgetExceeded):
+        tracker.reserve("unpriced-model",input_tokens=tokens)

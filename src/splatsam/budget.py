@@ -194,16 +194,17 @@ class BudgetTracker:
         committed, pending = self._totals(ledger)
         total = sum(committed.values(), _ZERO) + sum(pending.values(), _ZERO)
         budget = self._settings["budget"]
-        development_cap = self._decimal(budget["development_usd"], "development cap")
-        reserve = self._decimal(budget["reserve_usd"], "reserve")
+        development_cap = min(self._decimal(budget["development_usd"], "development cap"), Decimal("50"))
+        reserve = max(self._decimal(budget["reserve_usd"], "reserve"), Decimal("70"))
         initial = self._decimal(budget["initial_usd"], "initial budget")
         if total > development_cap:
             raise BudgetExceeded(f"development budget exceeded: ${total} > ${development_cap}")
         if total > initial - reserve:
             raise BudgetExceeded(f"required reserve breached: ${total} > ${initial - reserve}")
-        phase_cap = self._settings["budget"].get("phase_a_usd")
+        configured_phase_cap = budget.get("phase_a_usd", 10)
+        phase_cap = min(self._decimal(10 if configured_phase_cap is None else configured_phase_cap, "phase A cap"), Decimal("10"))
         phase_total = committed.get("A", _ZERO) + pending.get("A", _ZERO)
-        if phase_cap is not None and phase_total > self._decimal(phase_cap, "phase A cap"):
+        if phase_total > phase_cap:
             raise BudgetExceeded(f"Phase A budget exceeded: ${phase_total} > ${phase_cap}")
 
     @staticmethod

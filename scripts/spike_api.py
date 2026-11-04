@@ -15,9 +15,9 @@ import imageio.v3 as iio
 import numpy as np
 
 from splatsam.budget import BudgetTracker
-from splatsam.llm.client import ModelClient
+from splatsam.llm.client import ModelClient, MAX_OUTPUT_TOKENS, normalized_json_schema
 from splatsam.llm.schemas import ObjectList, ScenarioFamily
-from splatsam.utils import save_json
+from splatsam.utils import save_json, file_digest
 
 
 def _synthetic_media(root: Path) -> tuple[str, Path]:
@@ -43,7 +43,7 @@ def _json_safe(value: object) -> object:
 
 
 def _require_live(client: ModelClient, what: str) -> None:
-    if client.last_provenance != "live":
+    if client.last_provenance not in {"live", "cache"}:
         raise RuntimeError(f"{what} did not produce observed live evidence ({client.last_provenance})")
 
 
@@ -57,6 +57,7 @@ def _append_observed_notes(project_root: Path, fixture: Path, snapshot: dict) ->
         f"Sanitized fixture: `{fixture.relative_to(project_root)}`.\n"
         f"- Ledger snapshot recorded at completion: `{json.dumps(snapshot, sort_keys=True)}`. "
         "This note records format evidence only; it is not a quality or real-video claim.\n"
+        f"\nWorking wire requests (synthetic media only, bearer header omitted):\n\n```json\n{json.dumps(json.loads(fixture.read_text())['requests'], indent=2)}\n```\n"
     )
     prior = notes.read_text(encoding="utf-8")
     prior = prior.replace(
@@ -81,7 +82,7 @@ def main() -> int:
 
     project_root = Path(__file__).resolve().parents[1]
     run_dir = args.run_dir.resolve()
-    budget = BudgetTracker(run_dir)
+    budget = BudgetTracker(project_root / "runs" / "meta_budget.json")
     client = ModelClient(run_dir, budget=budget, live=True)
     media_dir = run_dir / "synthetic_media"
     image_data_uri, video = _synthetic_media(media_dir)
@@ -102,7 +103,7 @@ def main() -> int:
             stage="spike_spark",
         )
         _require_live(client, "Spark request")
-        sam = client.sam_request(video, "segment the colored rectangle")
+        sam = client.sam_request(video, "colored rectangle")
         _require_live(client, "SAM request")
     except Exception as error:
         print(f"BLOCKED/FAILED: {type(error).__name__}: {error}")
@@ -115,10 +116,17 @@ def main() -> int:
         return 1
     fixture = run_dir / "observed_fixture.json"
     safe_snapshot = _json_safe(snapshot)
+    requests = {
+        "wonder": {"model":"muse-wonder-1.0","instructions":"Return a bounded scenario family for a synthetic tabletop scene.","input":"Synthetic tabletop format check only.","max_output_tokens":MAX_OUTPUT_TOKENS,"text":{"format":{"type":"json_schema","name":"scenariofamily","schema":normalized_json_schema(ScenarioFamily),"strict":True}}},
+        "spark": {"model":"muse-spark-1.3","instructions":"List the single synthetic colored rectangle as an object.","input":[{"role":"user","content":[{"type":"input_text","text":"synthetic image only"},{"type":"input_image","image_url":image_data_uri}]}],"max_output_tokens":MAX_OUTPUT_TOKENS,"text":{"format":{"type":"json_schema","name":"objectlist","schema":normalized_json_schema(ObjectList),"strict":True}}},
+        "files": {"method":"POST","url":"https://api.meta.ai/v1/files","purpose":"user_data","file_artifact":str(video.relative_to(project_root)),"file_sha256":file_digest(video)},
+        "sam": {"model":"sam-3.1","stream":True,"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"colored rectangle"},{"type":"input_video","file_id":client.cache.get("upload:"+file_digest(video))}]}]},
+    }
     save_json(
         fixture,
         {
             "source": "live_observed_synthetic_spike",
+            "requests": requests,
             "wonder": wonder.model_dump(mode="json"),
             "spark": spark.model_dump(mode="json"),
             "sam": {"output_text": sam["output_text"], "usage": sam["usage"], "frames_billed": sam["frames_billed"]},

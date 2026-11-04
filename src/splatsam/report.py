@@ -30,7 +30,7 @@ def generate_report(run_dir: Path, scene: SceneSpec, final_test: dict | None, hi
         'scale':{'source':scene.scale_source,'independent_error':scene.scale_error,'validation':scene.reference_validation},
         'objects':[{'id':o.id,'name':o.name,'shape':o.shape,'size_m':o.size,'consistency_iou':o.consistency_iou,'reconstruction_source':o.reconstruction_source,'mass_kg':o.mass,'mass_source':o.mass_source,'friction':o.friction,'friction_source':o.friction_source,'height_source':o.height_source} for o in scene.objects],
         'costs':costs, 'limits':LIMITS, 'stages':stages or [],
-        'conclusion':'No improvement found' if not any(r.get('accepted') for r in history) else 'Validation-selected planner; held-out effect reported separately',
+        'conclusion':('Planner improvement not evaluated' if not history else 'No improvement found' if not any(r.get('accepted') for r in history) else 'Validation-selected planner; held-out effect reported separately'),
     }
     save_json(run_dir/'report.json',report)
     lines=['# Splatsam evaluation report','',f'**Mode: {scene.source}.** '+('Synthetic illustration only, not real-video evidence.' if scene.source!='live' else 'Scene-specific simulation evidence, not real-robot transfer.'),'',report['conclusion'],'','## Sealed test']

@@ -2,6 +2,7 @@ SHELL := /bin/bash
 .PHONY: setup test synth-demo demo final-test
 setup:
 	uv sync --python 3.12
+	mkdir -p data/videos
 
 test:
 	uv run pytest -q

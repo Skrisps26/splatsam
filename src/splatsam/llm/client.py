@@ -19,7 +19,7 @@ from tenacity import Retrying, retry_if_exception, stop_after_attempt, wait_expo
 
 from splatsam.budget import BudgetTracker
 from splatsam.llm.schemas import CriticLabel, ObjectList, PlannerPatch, ScenarioFamily
-from splatsam.utils import canonical, config, file_digest
+from splatsam.utils import ROOT, canonical, config, file_digest
 
 META_BASE_URL = "https://api.meta.ai/v1"
 MAX_OUTPUT_TOKENS = 2048
@@ -214,7 +214,7 @@ class ModelClient:
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.live = live
-        self.budget = budget or BudgetTracker(self.run_dir)
+        self.budget = budget or BudgetTracker(ROOT / "runs" / "meta_budget.json")
         self.cache = Cache(str(cache_dir or self.run_dir / "model_cache"))
         self._client: OpenAI | None = None
         self.last_provenance: str | None = None
