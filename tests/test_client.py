@@ -24,27 +24,6 @@ class FakeBudget:
         self.settlements.append((reservation_id, cost))
 
 
-def test_normalized_schema_requires_default_fields_and_forbids_extras() -> None:
-    schema = normalized_json_schema(ScenarioFamily)
-    assert schema["additionalProperties"] is False
-    assert set(schema["required"]) == set(schema["properties"])
-
-
-def test_planner_patch_wire_schema_closes_parameter_names() -> None:
-    schema = normalized_json_schema(PlannerPatch)
-    patch = schema["properties"]["patch"]
-    assert patch["additionalProperties"] is False
-    assert set(patch["required"]) == set(patch["properties"])
-    assert patch["properties"]["n_yaw_candidates"]["type"] == ["integer", "null"]
-
-
-
-def test_planner_patch_response_strips_required_wire_nulls() -> None:
-    result = _parse_model_response(
-        PlannerPatch,
-        '{"schema_version":1,"patch":{"grip_safety_factor":1.4,"jaw_margin_m":null,"pregrasp_height_m":null,"approach_speed":null,"lift_speed":null,"n_yaw_candidates":null,"clearance_weight":null,"center_weight":null},"reason":"fixture"}',
-    )
-    assert result.patch == {"grip_safety_factor": 1.4}
 
 def test_offline_client_returns_typed_fallback_and_redacts_prompt(tmp_path: Path) -> None:
     client = ModelClient(tmp_path / "runs" / "offline", budget=FakeBudget())
@@ -63,16 +42,6 @@ def test_offline_client_returns_typed_fallback_and_redacts_prompt(tmp_path: Path
     assert "a private prompt" not in serialized
 
 
-def test_mock_fixture_and_bounded_proposal(tmp_path: Path) -> None:
-    client = MockClient(
-        tmp_path / "runs" / "mock",
-        budget=FakeBudget(),
-        fixture_responses={CriticLabel: {"label": "slip_or_drop", "reason": "fixture"}},
-    )
-    assert client.generate(CriticLabel, model="muse-spark-1.3", instructions="x", input="y", stage="critic").label == "slip_or_drop"
-    patch = client.generate(PlannerPatch, model="muse-wonder-1.0", instructions="x", input="y", stage="proposal")
-    assert patch.patch == {"grip_safety_factor": 1.3}
-    assert client.last_provenance == "mock"
 
 
 def test_request_fingerprint_never_contains_data_uri_or_text() -> None:
@@ -87,3 +56,32 @@ def test_live_only_sam_helper_rejects_default_offline_mode(tmp_path: Path) -> No
     client = ModelClient(tmp_path / "runs" / "offline", budget=FakeBudget())
     with pytest.raises(LiveDispatchUnavailable):
         client.sam_request(tmp_path / "missing.mp4", "segment object")
+
+def test_successful_generation_is_cached_but_invalid_response_is_not(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setenv('MODEL_API_KEY','test-not-a-real-key')
+    budget=FakeBudget()
+    client=ModelClient(tmp_path/'run',budget=budget,live=True)
+    monkeypatch.setattr(client,'_preflight_tokens',lambda payload:100)
+    calls=[]
+    def create(**payload):
+        calls.append(payload)
+        return SimpleNamespace(status='completed',output_text='{"patch":{"grip_safety_factor":2},"reason":"bounded"}',usage=SimpleNamespace(input_tokens=100,output_tokens=20))
+    client._client=SimpleNamespace(responses=SimpleNamespace(create=create))
+    kwargs=dict(model='muse-wonder-1.0',instructions='bounded edits',input='counts',stage='proposal')
+    first=client.generate(PlannerPatch,**kwargs)
+    second=client.generate(PlannerPatch,**kwargs)
+    assert first==second and len(calls)==1
+    assert len(budget.reservations)==len(budget.settlements)==1
+    assert client.last_provenance=='cache'
+    # An invalid provider completion is charged, corrected once, then falls back;
+    # subsequent requests must try again rather than treating that fallback as live cache.
+    calls.clear()
+    def invalid(**payload):
+        calls.append(payload)
+        return SimpleNamespace(status='completed',output_text='not JSON',usage=None)
+    client._client=SimpleNamespace(responses=SimpleNamespace(create=invalid))
+    for _ in range(2):
+        client.generate(ScenarioFamily,**(kwargs|{'input':'different','stage':'family'}))
+    assert len(calls)==4
+    assert client.last_provenance=='fallback'

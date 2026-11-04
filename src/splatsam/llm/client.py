@@ -23,7 +23,7 @@ from splatsam.utils import canonical, config, file_digest
 
 META_BASE_URL = "https://api.meta.ai/v1"
 MAX_OUTPUT_TOKENS = 2048
-MAX_INPUT_FALLBACK_TOKENS = 128_000
+MAX_INPUT_FALLBACK_TOKENS = 1_048_576
 REQUEST_TIMEOUT = httpx.Timeout(timeout=120.0, read=30.0)
 T = TypeVar("T", bound=BaseModel)
 
@@ -112,6 +112,19 @@ def _status_code(error: BaseException) -> int | None:
         code = getattr(response, "status_code", None)
     return int(code) if isinstance(code, int) else None
 
+
+def _retry_wait(retry_state: Any) -> float:
+    delay = wait_exponential_jitter(initial=1, max=8)(retry_state)
+    error = retry_state.outcome.exception()
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", {})
+    try:
+        retry_after = float(headers.get("retry-after", 0))
+    except (TypeError, ValueError):
+        retry_after = 0
+    if retry_after > 120:
+        raise LiveDispatchUnavailable("Retry-After exceeds bounded request window")
+    return max(delay, retry_after)
 
 def _retryable(error: BaseException) -> bool:
     code = _status_code(error)
@@ -256,6 +269,7 @@ class ModelClient:
         if isinstance(cached, int) and cached >= 0:
             return cached
         headers = {"Authorization": f"Bearer {os.environ['MODEL_API_KEY']}"}
+        started = time.monotonic()
         try:
             with httpx.Client(timeout=REQUEST_TIMEOUT) as client:
                 response = client.post(f"{META_BASE_URL}/responses/input_tokens", headers=headers, json=payload)
@@ -264,8 +278,10 @@ class ModelClient:
                 if not isinstance(tokens, int) or tokens < 0:
                     return MAX_INPUT_FALLBACK_TOKENS
                 self.cache.set(f"input_tokens:{key}", tokens)
+                self._trajectory(provenance="live_preflight", stage="token_count", model=payload["model"], request=payload, response={"input_tokens": tokens}, latency_s=time.monotonic()-started)
                 return tokens
-        except httpx.HTTPError:
+        except httpx.HTTPError as error:
+            self._trajectory(provenance="preflight_error", stage="token_count", model=payload["model"], request=payload, error=error, latency_s=time.monotonic()-started)
             return MAX_INPUT_FALLBACK_TOKENS
 
     def _dispatch_json(self, *, payload: dict[str, Any], schema: type[T], model: str, stage: str, attempt_kind: str) -> T:
@@ -304,7 +320,7 @@ class ModelClient:
         retrying = Retrying(
             retry=retry_if_exception(_retryable),
             stop=stop_after_attempt(3),
-            wait=wait_exponential_jitter(initial=1, max=8),
+            wait=_retry_wait,
             reraise=True,
         )
         return retrying(self._dispatch_json, payload=payload, schema=schema, model=model, stage=stage, attempt_kind=attempt_kind)
@@ -405,7 +421,7 @@ class ModelClient:
             raise LiveDispatchUnavailable("SAM requires explicit live mode and MODEL_API_KEY")
         path = Path(path).resolve()
         frames = max(50, self._video_frames(path))
-        prompt = f"{phrase}\n{self._box_text(box_prompt)}".strip()
+        prompt = self._box_text(box_prompt) if box_prompt is not None else phrase.strip()
         sam_key = hashlib.sha256(canonical(_file_or_value_digest({"video": path, "phrase": phrase, "box_prompt": box_prompt})).encode()).hexdigest()
         cached = self.cache.get(f"sam:{sam_key}")
         if isinstance(cached, dict) and isinstance(cached.get("output_text"), str):
@@ -436,6 +452,8 @@ class ModelClient:
                 usage: dict[str, int] = {}
                 with self._openai().responses.stream(**payload) as stream:
                     for event in stream:
+                        if time.monotonic() - started > 120:
+                            raise TimeoutError("SAM overall request deadline exceeded")
                         if getattr(event, "type", None) == "response.output_text.delta":
                             delta = getattr(event, "delta", "")
                             if isinstance(delta, str):
@@ -473,7 +491,7 @@ class ModelClient:
                     file_id = self.upload_video(path)
                 raise
 
-        retrying = Retrying(retry=retry_if_exception(_retryable), stop=stop_after_attempt(3), wait=wait_exponential_jitter(initial=1, max=8), reraise=True)
+        retrying = Retrying(retry=retry_if_exception(_retryable), stop=stop_after_attempt(3), wait=_retry_wait, reraise=True)
         try:
             return retrying(request_once)
         except Exception as error:
