@@ -33,6 +33,14 @@ def generate_report(
     comparison = final_test.get("comparison", final_test) if final_test else None
     if comparison and "baseline" not in comparison:
         comparison = None
+    limits = list(LIMITS)
+    elevation = scene.reference_validation.get("reference_elevation_m", 0.0)
+    if elevation > 0:
+        limits.append(
+            f"The calibration surface is nominally {elevation * 1000:g} mm above the support plane. "
+            "This is an estimated reference height, not a camera measurement. Its plane-offset "
+            "scale/position bias remains uncorrected without metric camera height or pose."
+        )
     report = {
         "schema_version": 1,
         "mode": scene.source,
@@ -67,7 +75,7 @@ def generate_report(
             for o in scene.objects
         ],
         "costs": costs,
-        "limits": LIMITS,
+        "limits": limits,
         "stages": stages or [],
         "conclusion": (
             "Planner improvement not evaluated"

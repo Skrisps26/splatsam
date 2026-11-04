@@ -81,7 +81,7 @@ Phase A builds and tests with synthetic data under `data_synth/`. It never proce
 1. Supply `MODEL_API_KEY` through the environment or ignored `.env`, never chat or the repo. The small synthetic format spike has passed; rerunning it is opt-in (`uv run --env-file .env python scripts/spike_api.py --max-usd 10`). [API notes](docs/api_notes.md) contain observed request formats, fixture and usage evidence.
 2. Say **go**, confirm the real video is ready in ignored `data/videos/`, and confirm it contains no personal documents, screens, mail or ID cards. B1 binds authorization to its SHA256 and produces overlays/scene only. **User mask approval is required before B2.**
 3. Confirm B2 inputs: freeze the scene/family, seal fresh `data/splits/`, run baseline and train/validation improvement. No real held-out outcomes are read here.
-4. B3 is optional and additionally spend-approved. RunPod was selected, but no RunPod MCP lifecycle route is mounted; the current workflow safely skips it and retains primitives. HF access/license and verified shutdown controls are prerequisites, never reasons to rent a resource speculatively.
+4. B3 is optional and additionally spend-approved. Runpod account access was verified read-only; resource creation/cleanup and actual SAM 3D inference remain unexercised. The selected live path uses CPU primitives with no GPU spending.
 5. Confirm B4 final inputs: run the real baseline/final sealed comparison **exactly once**. `results/FINAL_TEST.started` is exclusive and remains after an interruption; the real evaluator refuses a second attempt, including with a different run ID.
 
 An operator records the user's actual confirmations in ignored `data/authorization.json`; flags are not inferred from file presence. Initial safe template:
@@ -121,6 +121,13 @@ Valid individual measurements override estimates; malformed values are diagnosed
 ## Interpretation limits
 
 Simulation only; floating hand/no arm or IK; rule-based parameter tuning, not a neural policy; no claimed real-robot transfer. Object heights and hidden geometry are estimated, and mass/friction are estimates unless labeled measured. Footprint IoU does not validate height, mass, friction or collision geometry. Paper curl, object height and camera tilt cause scale uncertainty of a few percent; thin objects remain sensitive to raster resolution and parallax. Results are specific to the captured scene. The local hash seal guards mistakes, not a malicious repository owner.
+
+### Calibration references
+
+Synthetic runs retain the A4 `reference` configuration. Real B1 uses the separate `live_reference` settings: a closed laptop rectangle, 357 × 255 mm, nominal surface elevation 23.5 mm, plastic, never a grasp target. Dimensions and reference identity are explicit inputs to the same OpenCV homography/reconstruction path; pens are identified from the real frames rather than assumed to be markers.
+
+The laptop elevation is a model-specification estimate, not a camera-height measurement. The homography is fitted on its lid plane; without metric camera height/pose, floor-plane scale/position bias remains uncorrected and is listed in the report. Near-overhead framing reduces ambiguity but does not prove the real scene's metric accuracy.
+
 
 Library searches and implementation choices: [decisions](docs/decisions.md). Dashboard layout and observed surface checks: [design](DESIGN.md).
 

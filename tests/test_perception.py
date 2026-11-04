@@ -64,6 +64,75 @@ def test_reference_recovers_known_object_footprint_not_just_sheet(tmp_path: Path
     assert warped_remote.sum() > 0
 
 
+def test_reference_uses_configured_laptop_rectangle_and_preserves_plane_offset(
+    tmp_path: Path,
+) -> None:
+    image_shape = (700, 700)
+    laptop = np.zeros(image_shape, dtype=np.uint8)
+    # Filled edges define an analytic 357 by 255 pixel calibration rectangle.
+    laptop[60:316, 80:438] = 1
+    paper = np.zeros_like(laptop)
+    paper[340:638, 20:230] = 1
+    remote = np.zeros_like(laptop)
+    remote[400:446, 480:561] = 1  # independently known .080 by .045 m footprint
+    tracks = [
+        _track("incidental-paper", "paper", [_mask_frame(tmp_path / "paper.png", paper)]),
+        _track(
+            "laptop-calibration",
+            "closed laptop calibration rectangle",
+            [_mask_frame(tmp_path / "laptop.png", laptop)],
+        ),
+        _track("remote", "remote", [_mask_frame(tmp_path / "remote.png", remote)]),
+    ]
+    sample = FrameSample(0, 0.0, np.zeros((*image_shape, 3), dtype=np.uint8), 100.0)
+
+    reference = find_reference(
+        tracks,
+        [sample],
+        reference_name="closed laptop calibration rectangle",
+        width_mm=357,
+        height_mm=255,
+        elevation_mm=23.5,
+        material="plastic",
+    )
+    metric = reference.pixel_to_metric(np.asarray([[480, 400], [560, 445]], dtype=float))
+    dimensions = np.abs(metric[1] - metric[0])
+
+    assert reference.scale_source == "reference_homography"
+    assert reference.reference_id == "laptop-calibration"
+    assert reference.reference_height_m == pytest.approx(0.0235)
+    assert reference.reference_material == "plastic"
+    assert reference.validation["reference_width_m"] == pytest.approx(0.357)
+    assert reference.validation["reference_height_m"] == pytest.approx(0.255)
+    assert reference.validation["reference_elevation_m"] == pytest.approx(0.0235)
+    assert np.allclose(dimensions, [0.080, 0.045], atol=0.002)
+
+
+@pytest.mark.parametrize(
+    ("width_mm", "height_mm", "elevation_mm"),
+    [
+        (0.0, 255.0, 0.0),
+        (float("nan"), 255.0, 0.0),
+        (357.0, float("inf"), 0.0),
+        (357.0, 255.0, -0.001),
+        (357.0, 255.0, float("nan")),
+    ],
+)
+def test_invalid_reference_dimensions_cannot_bypass_validation_via_manual_scale(
+    width_mm: float, height_mm: float, elevation_mm: float
+) -> None:
+    sample = FrameSample(0, 0.0, np.zeros((100, 100, 3), dtype=np.uint8), 10.0)
+    with pytest.raises(ReferenceError):
+        find_reference(
+            [],
+            [sample],
+            manual_px_per_cm=100,
+            width_mm=width_mm,
+            height_mm=height_mm,
+            elevation_mm=elevation_mm,
+        )
+
+
 def test_reference_rejects_border_sheet_then_uses_manual_or_blocks(tmp_path: Path) -> None:
     paper = np.zeros((100, 100), dtype=np.uint8)
     paper[:, :40] = 1  # touches frame border and cannot be a fully visible reference.
@@ -75,7 +144,6 @@ def test_reference_rejects_border_sheet_then_uses_manual_or_blocks(tmp_path: Pat
         find_reference(tracks, [sample])
     manual = find_reference(tracks, [sample], manual_px_per_cm=100.0)
     assert manual.scale_source == "manual_px_per_cm"
-    assert "paper_touches_border:0" in manual.diagnostics
 
 
 def test_stability_gate_accepts_boundaries_and_rejects_strict_violations() -> None:

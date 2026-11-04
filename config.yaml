@@ -5,6 +5,13 @@ reference:
   width_mm: 210
   height_mm: 297
   manual_px_per_cm: null
+live_reference:
+  name: closed laptop
+  width_mm: 357
+  height_mm: 255
+  elevation_mm: 23.5
+  material: plastic
+  manual_px_per_cm: null
 models:
   scene: muse-wonder-1.0
   family: muse-wonder-1.0

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 from io import BytesIO
 from typing import TYPE_CHECKING
 
@@ -15,10 +16,13 @@ if TYPE_CHECKING:
     from splatsam.llm.client import ModelClient
 
 
-_OBJECT_INSTRUCTIONS = """Identify only visible tabletop objects from the supplied frames.
-Return stable IDs, a concise class/name, material estimate, full approximate dimensions in
-centimetres, a graspable flag, and instance count. Do not infer hidden positions or use
-external scene knowledge. Every listed object must be visible in at least one frame."""
+_OBJECT_INSTRUCTIONS = """Identify only visible workspace objects on the support surface.
+Return stable IDs, a concise segmentation noun phrase, material estimate, full approximate
+dimensions in centimetres (length, width, vertical height), a graspable flag, and instance
+count. Prefer one class entry with count for repeated objects, not overlapping duplicate
+entries. Do not identify printed stickers, surface patterns or shadows as separate objects.
+Do not infer hidden positions or use external scene knowledge. Every listed object must
+be visible in at least one frame."""
 
 
 def _image_data_uri(frame: FrameSample) -> str:
@@ -65,7 +69,11 @@ def _record_fixture(client: object, fixture: ObjectList, frame_count: int) -> No
 
 
 def identify_objects(
-    frames: list[FrameSample], client: ModelClient, *, fixture: ObjectList | None = None
+    frames: list[FrameSample],
+    client: ModelClient,
+    *,
+    fixture: ObjectList | None = None,
+    reference: dict | None = None,
 ) -> ObjectList:
     """Return semantic priors, never geometry or positions from hidden scene truth.
 
@@ -78,10 +86,19 @@ def identify_objects(
         result = ObjectList.model_validate(fixture)
         _record_fixture(client, result, len(frames))
         return result
+    instructions = _OBJECT_INSTRUCTIONS
+    if reference is not None:
+        instructions += (
+            "\nThe configured calibration reference is "
+            + json.dumps(reference)
+            + '. If visible, include it once with id="reference", use its supplied name '
+            "as the segmentation phrase, mark graspable=false, and use the supplied "
+            "metric dimensions as priors. Do not invent a sheet of paper if absent."
+        )
     result = client.generate(
         ObjectList,
         model="muse-wonder-1.0",
-        instructions=_OBJECT_INSTRUCTIONS,
+        instructions=instructions,
         input=model_input,
         stage="objects",
     )

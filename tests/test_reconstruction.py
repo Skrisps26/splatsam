@@ -13,7 +13,12 @@ from splatsam.recon import reconstruct
 _SIZE = (240, 320)
 
 
-def _reference() -> ReferenceResult:
+def _reference(
+    *,
+    reference_id: str | None = None,
+    reference_height_m: float = 0.001,
+    reference_material: str = "paper",
+) -> ReferenceResult:
     height, width = _SIZE
     return ReferenceResult(
         homography=np.eye(3),
@@ -23,6 +28,9 @@ def _reference() -> ReferenceResult:
         working_frame_index=7,
         scale_source="paper_homography",
         validation={"aspect_ratio_error": 0.01},
+        reference_id=reference_id,
+        reference_height_m=reference_height_m,
+        reference_material=reference_material,
         _raster_shape=_SIZE,
     )
 
@@ -190,3 +198,33 @@ def test_reference_alias_is_static_thin_paper_and_nearest_source_mask_is_used(tm
     # Reference frame 7 chooses source index 8 rather than index 0, so the
     # result has the square's mask-derived footprint rather than the old box.
     assert abs(paper.size[0] - paper.size[1]) < 0.002
+
+
+def test_selected_laptop_reference_preserves_its_physical_geometry(tmp_path: Path) -> None:
+    laptop = _track(tmp_path, "laptop", _rectangle(80, 70, 100, 70))
+    scene = reconstruct(
+        [laptop],
+        ObjectList(
+            objects=[
+                ObjectInfo(
+                    id="laptop",
+                    name="laptop",
+                    material_guess="plastic",
+                    approx_size_cm=(35.7, 25.5, 2.35),
+                    graspable=True,
+                )
+            ]
+        ),
+        _reference(
+            reference_id="laptop",
+            reference_height_m=0.0235,
+            reference_material="plastic",
+        ),
+    )
+
+    reference = scene.objects[0]
+    assert reference.shape == "box"
+    assert not reference.graspable
+    assert np.isclose(reference.size[2], 0.0235)
+    assert np.isclose(reference.position[2], 0.0235 / 2.0)
+    assert reference.material == "plastic"

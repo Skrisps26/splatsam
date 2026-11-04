@@ -146,7 +146,16 @@ def synthetic_accuracy(scene, reference, tracks, truth_path):
 
 
 def perceive(
-    video, client, run_dir, *, fixture=None, tracks_path=None, measured_path=None, source="synthetic", seed=42
+    video,
+    client,
+    run_dir,
+    *,
+    fixture=None,
+    tracks_path=None,
+    measured_path=None,
+    reference_config=None,
+    source="synthetic",
+    seed=42,
 ):
     from splatsam.perception.frames import sample_frames
     from splatsam.perception.objects import identify_objects
@@ -156,13 +165,23 @@ def perceive(
     from splatsam.sim.fit import fit_scene, render_scene
 
     frames = sample_frames(video, out_dir=run_dir / "frames")
-    objects = identify_objects(frames, client, fixture=fixture)
+    reference_settings = config()["reference"] if reference_config is None else reference_config
+    objects = identify_objects(frames, client, fixture=fixture, reference=reference_settings)
     sam = MockSamClient(tracks_path) if tracks_path else SamClient(client, run_dir)
     tracks = sam.track(video, objects)
     save_json(run_dir / "objects.json", objects)
     save_json(run_dir / "tracks.json", [t.model_dump(mode="json") for t in tracks])
     save_overlays(video, tracks, run_dir)
-    ref = find_reference(tracks, frames, manual_px_per_cm=config()["reference"].get("manual_px_per_cm"))
+    ref = find_reference(
+        tracks,
+        frames,
+        manual_px_per_cm=reference_settings.get("manual_px_per_cm"),
+        reference_name=reference_settings.get("name", "sheet of white paper"),
+        width_mm=reference_settings.get("width_mm", 210),
+        height_mm=reference_settings.get("height_mm", 297),
+        elevation_mm=reference_settings.get("elevation_mm", 0),
+        material=reference_settings.get("material", "paper"),
+    )
     scene = reconstruct(tracks, objects, ref, measured_path=measured_path, source=source, seed=seed)
     if not any(o.graspable for o in scene.objects):
         raise RuntimeError("No reliable graspable target; scene evaluation blocked")
@@ -178,6 +197,9 @@ def perceive(
             "meters_per_pixel": ref.meters_per_pixel,
             "working_frame_index": ref.working_frame_index,
             "source": ref.scale_source,
+            "reference_id": ref.reference_id,
+            "reference_height_m": ref.reference_height_m,
+            "reference_material": ref.reference_material,
             "validation": ref.validation,
             "diagnostics": ref.diagnostics,
         },
@@ -425,7 +447,13 @@ def live(args):
                 "Run the bounded synthetic scripts/spike_api.py format verification before sending real video"
             )
         scene, _, _ = perceive(
-            video, client, run_dir, measured_path=ROOT / "data/measured.yaml", source="live", seed=args.seed
+            video,
+            client,
+            run_dir,
+            measured_path=ROOT / "data/measured.yaml",
+            reference_config=config().get("live_reference", config()["reference"]),
+            source="live",
+            seed=args.seed,
         )
         save_json(run_dir / "scene.json", scene)
         save_json(

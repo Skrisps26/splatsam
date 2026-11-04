@@ -1,4 +1,4 @@
-"""Paper-reference homography and metric raster construction for perception masks."""
+"""Reference-rectangle homography and metric raster construction for perception masks."""
 
 from __future__ import annotations
 
@@ -13,10 +13,8 @@ import numpy as np
 from splatsam.llm.schemas import MaskFrame, MaskTrack
 from splatsam.perception.frames import FrameSample
 
-SHEET_SHORT_M = 0.210
-SHEET_LONG_M = 0.297
 METERS_PER_PIXEL = 0.001
-_REFERENCE_WORDS = ("reference", "sheet", "paper")
+_PAPER_REFERENCE_WORDS = ("sheet", "paper")
 
 
 class ReferenceError(RuntimeError):
@@ -35,6 +33,9 @@ class ReferenceResult:
     scale_source: str = "paper_homography"
     validation: dict[str, float] = field(default_factory=dict)
     diagnostics: list[str] = field(default_factory=list)
+    reference_id: str | None = None
+    reference_height_m: float = 0.001
+    reference_material: str = "paper"
     _raster_shape: tuple[int, int] = field(default=(0, 0), repr=False)
 
     def warp_mask(self, mask: np.ndarray) -> np.ndarray:
@@ -73,17 +74,41 @@ def _read_mask(path: str) -> np.ndarray:
     return image > 0
 
 
-def _reference_track(tracks: Iterable[MaskTrack]) -> MaskTrack | None:
-    matches = [
-        track
-        for track in tracks
-        if any(word in track.name.lower() or word in track.id.lower() for word in _REFERENCE_WORDS)
+def _reference_track(tracks: Iterable[MaskTrack], reference_name: str, material: str) -> MaskTrack | None:
+    """Choose the configured reference before any paper-only fallback."""
+    candidates = list(tracks)
+    configured_name = reference_name.casefold().strip()
+
+    def identities(track: MaskTrack) -> tuple[str, str]:
+        return track.name.casefold(), track.id.casefold()
+
+    exact_configured = [
+        track for track in candidates if configured_name and configured_name in identities(track)
     ]
-    # Prefer the explicit `reference` name when present over generic paper.
-    return next(
-        (track for track in matches if "reference" in track.name.lower() or "reference" in track.id.lower()),
-        matches[0] if matches else None,
-    )
+    if exact_configured:
+        return exact_configured[0]
+    named_configured = [
+        track
+        for track in candidates
+        if configured_name and any(configured_name in identity for identity in identities(track))
+    ]
+    if named_configured:
+        return named_configured[0]
+    explicit_reference = [
+        track for track in candidates if any("reference" in identity for identity in identities(track))
+    ]
+    if explicit_reference:
+        return explicit_reference[0]
+    if material.casefold() == "paper":
+        return next(
+            (
+                track
+                for track in candidates
+                if any(word in identity for identity in identities(track) for word in _PAPER_REFERENCE_WORDS)
+            ),
+            None,
+        )
+    return None
 
 
 def _frame_masks(
@@ -113,7 +138,9 @@ def _order_corners(points: np.ndarray) -> np.ndarray:
     return np.roll(ordered, -start, axis=0)
 
 
-def _paper_quad(mask: np.ndarray) -> tuple[np.ndarray, float, float] | None:
+def _reference_quad(
+    mask: np.ndarray, width_m: float, height_m: float
+) -> tuple[np.ndarray, float, float] | None:
     contour_items = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     contours = contour_items[-2]
     if not contours:
@@ -134,7 +161,8 @@ def _paper_quad(mask: np.ndarray) -> tuple[np.ndarray, float, float] | None:
     quad_area = abs(float(cv2.contourArea(corners.astype(np.float32))))
     if quad_area <= 0:
         return None
-    ratio_error = abs(max(side_a, side_b) / min(side_a, side_b) / (SHEET_LONG_M / SHEET_SHORT_M) - 1.0)
+    expected_ratio = max(width_m, height_m) / min(width_m, height_m)
+    ratio_error = abs(max(side_a, side_b) / min(side_a, side_b) / expected_ratio - 1.0)
     area_error = abs(float(cv2.contourArea(contour)) / quad_area - 1.0)
     return corners, ratio_error, area_error
 
@@ -145,10 +173,17 @@ def _touches_border(mask: np.ndarray) -> bool:
     return bool(np.any(mask[0]) or np.any(mask[-1]) or np.any(mask[:, 0]) or np.any(mask[:, -1]))
 
 
-def _metric_destination(corners: np.ndarray) -> np.ndarray:
+def _metric_destination(corners: np.ndarray, width_m: float, height_m: float) -> np.ndarray:
     edge_a = float(np.linalg.norm(corners[1] - corners[0]))
     edge_b = float(np.linalg.norm(corners[2] - corners[1]))
-    first, second = (SHEET_LONG_M, SHEET_SHORT_M) if edge_a >= edge_b else (SHEET_SHORT_M, SHEET_LONG_M)
+    first, second = (
+        (max(width_m, height_m), min(width_m, height_m))
+        if edge_a >= edge_b
+        else (
+            min(width_m, height_m),
+            max(width_m, height_m),
+        )
+    )
     return np.asarray([[0.0, 0.0], [first, 0.0], [first, second], [0.0, second]], dtype=np.float32)
 
 
@@ -193,8 +228,50 @@ def _raster_transform(
     return raster_prefix @ homography, bounds, (height, width)
 
 
+def _reference_parameters(
+    width_mm: float, height_mm: float, elevation_mm: float
+) -> tuple[float, float, float, float]:
+    try:
+        width_m = float(width_mm) / 1000.0
+        height_m = float(height_mm) / 1000.0
+        elevation_m = float(elevation_mm) / 1000.0
+    except (TypeError, ValueError) as error:
+        raise ReferenceError("reference dimensions and elevation must be numeric") from error
+    if not np.isfinite(width_m) or not np.isfinite(height_m) or width_m <= 0 or height_m <= 0:
+        raise ReferenceError("reference width_mm and height_mm must be finite and positive")
+    if not np.isfinite(elevation_m) or elevation_m < 0:
+        raise ReferenceError("reference elevation_mm must be finite and non-negative")
+    return width_m, height_m, elevation_m, max(METERS_PER_PIXEL, elevation_m)
+
+
+def _reference_validation(
+    width_m: float, height_m: float, elevation_m: float, **validation: float
+) -> dict[str, float]:
+    return {
+        **validation,
+        "reference_width_m": width_m,
+        "reference_height_m": height_m,
+        "reference_elevation_m": elevation_m,
+    }
+
+
+def _elevation_diagnostics(elevation_m: float) -> list[str]:
+    if elevation_m <= 0:
+        return []
+    return [f"reference elevation {elevation_m:.4f} m is an uncorrected plane-offset uncertainty"]
+
+
 def _manual_result(
-    frames: list[FrameSample], tracks: list[MaskTrack], pixels_per_cm: float
+    frames: list[FrameSample],
+    tracks: list[MaskTrack],
+    pixels_per_cm: float,
+    *,
+    reference_track: MaskTrack | None,
+    width_m: float,
+    height_m: float,
+    elevation_m: float,
+    reference_height_m: float,
+    material: str,
 ) -> ReferenceResult:
     if not np.isfinite(pixels_per_cm) or pixels_per_cm <= 0:
         raise ReferenceError("manual pixels/cm must be finite and positive")
@@ -212,47 +289,66 @@ def _manual_result(
         bounds=bounds,
         working_frame_index=frame.index,
         scale_source="manual_px_per_cm",
-        validation={"manual_pixels_per_cm": float(pixels_per_cm)},
-        diagnostics=["manual scale fallback; no paper-homography self-consistency validation"],
+        validation=_reference_validation(
+            width_m, height_m, elevation_m, manual_pixels_per_cm=float(pixels_per_cm)
+        ),
+        diagnostics=[
+            "manual scale fallback; no reference-homography self-consistency validation",
+            *_elevation_diagnostics(elevation_m),
+        ],
+        reference_id=reference_track.id if reference_track is not None else None,
+        reference_height_m=reference_height_m,
+        reference_material=material,
         _raster_shape=shape,
     )
 
 
 def find_reference(
-    tracks: list[MaskTrack], frames: list[FrameSample], *, manual_px_per_cm: float | None = None
+    tracks: list[MaskTrack],
+    frames: list[FrameSample],
+    *,
+    manual_px_per_cm: float | None = None,
+    reference_name: str = "sheet of white paper",
+    width_mm: float = 210,
+    height_mm: float = 297,
+    elevation_mm: float = 0,
+    material: str = "paper",
 ) -> ReferenceResult:
-    """Find a valid paper reference frame or fail closed without a manual scale."""
+    """Find the configured reference frame or fail closed without a manual scale."""
+    width_m, height_m, elevation_m, reference_height_m = _reference_parameters(
+        width_mm, height_mm, elevation_mm
+    )
     if not frames:
         raise ReferenceError("reference stage needs sampled frames")
-    paper = _reference_track(tracks)
+    reference = _reference_track(tracks, reference_name, material)
     diagnostics: list[str] = []
-    if paper is not None:
+    if reference is not None:
         by_index = {frame.index: frame for frame in frames}
         candidates: list[tuple[FrameSample, np.ndarray, float]] = []
-        for mask_frame in paper.frames:
+        for mask_frame in reference.frames:
             sample = by_index.get(mask_frame.frame_index)
             if sample is None:
                 continue
             mask = _read_mask(mask_frame.mask_path)
             if _touches_border(mask):
-                diagnostics.append(f"paper_touches_border:{sample.index}")
+                diagnostics.append(f"reference_touches_border:{sample.index}")
                 continue
             all_masks = _frame_masks(tracks, sample.index)
             object_area = float(sum(np.count_nonzero(item[2]) for item in all_masks))
             candidates.append((sample, mask, object_area))
         candidates.sort(key=lambda candidate: (-candidate[0].blur_score, -candidate[2], candidate[0].index))
         for sample, mask, _ in candidates:
-            extraction = _paper_quad(mask)
+            extraction = _reference_quad(mask, width_m, height_m)
             if extraction is None:
-                diagnostics.append(f"paper_corners_unavailable:{sample.index}")
+                diagnostics.append(f"reference_corners_unavailable:{sample.index}")
                 continue
             corners, ratio_error, area_error = extraction
             if ratio_error > 0.05 or area_error > 0.10:
                 diagnostics.append(
-                    f"paper_validation_failed:{sample.index}:ratio={ratio_error:.3f}:area={area_error:.3f}"
+                    f"reference_validation_failed:{sample.index}:ratio={ratio_error:.3f}:area={area_error:.3f}"
                 )
                 continue
-            destination = _metric_destination(corners)
+            destination = _metric_destination(corners, width_m, height_m)
             homography, _ = cv2.findHomography(corners.astype(np.float32), destination, method=0)
             if homography is None:
                 diagnostics.append(f"homography_failed:{sample.index}")
@@ -266,17 +362,39 @@ def find_reference(
                 image_to_raster=image_to_raster,
                 bounds=bounds,
                 working_frame_index=sample.index,
-                scale_source="paper_homography",
-                validation={"aspect_ratio_error": ratio_error, "paper_area_error": area_error},
+                scale_source="paper_homography" if material.casefold() == "paper" else "reference_homography",
+                validation=_reference_validation(
+                    width_m,
+                    height_m,
+                    elevation_m,
+                    aspect_ratio_error=ratio_error,
+                    reference_area_error=area_error,
+                ),
                 diagnostics=diagnostics
-                + ["paper ratio/area checks are self-consistency checks, not independent scale truth"],
+                + [
+                    "reference ratio/area checks are self-consistency checks, not independent scale truth",
+                    *_elevation_diagnostics(elevation_m),
+                ],
+                reference_id=reference.id,
+                reference_height_m=reference_height_m,
+                reference_material=material,
                 _raster_shape=shape,
             )
     else:
-        diagnostics.append("reference_paper_track_missing")
+        diagnostics.append("reference_track_missing")
     if manual_px_per_cm is not None:
-        result = _manual_result(frames, tracks, manual_px_per_cm)
+        result = _manual_result(
+            frames,
+            tracks,
+            manual_px_per_cm,
+            reference_track=reference,
+            width_m=width_m,
+            height_m=height_m,
+            elevation_m=elevation_m,
+            reference_height_m=reference_height_m,
+            material=material,
+        )
         result.diagnostics = diagnostics + result.diagnostics
         return result
-    detail = "; ".join(diagnostics) if diagnostics else "no usable reference paper frame"
+    detail = "; ".join(diagnostics) if diagnostics else "no usable reference frame"
     raise ReferenceError(f"reference stage blocked: {detail}; provide manual_px_per_cm")

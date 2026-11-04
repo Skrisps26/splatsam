@@ -77,7 +77,10 @@ def _semantic_for(track: MaskTrack, objects: ObjectList) -> ObjectInfo | None:
     return None
 
 
-def _is_reference(track: MaskTrack, semantic: ObjectInfo | None) -> bool:
+def _is_reference(track: MaskTrack, semantic: ObjectInfo | None, reference: ReferenceResult) -> bool:
+    """Honor a selected reference ID, with aliases retained for legacy paper inputs."""
+    if reference.reference_id is not None:
+        return track.id == reference.reference_id
     values = (track.id, track.name, semantic.id if semantic else "", semantic.name if semantic else "")
     return any(alias in value.lower() for value in values for alias in _REFERENCE_ALIASES)
 
@@ -262,10 +265,14 @@ def reconstruct(
             continue
         center_x_px, center_y_px, long_axis, short_axis, yaw, circularity = geometry
         semantic = _semantic_for(track, objects)
-        is_reference = _is_reference(track, semantic)
-        material = "paper" if is_reference else (semantic.material_guess if semantic else "plastic").lower()
+        is_reference = _is_reference(track, semantic, reference)
+        material = (
+            reference.reference_material
+            if is_reference
+            else (semantic.material_guess if semantic else "plastic")
+        ).lower()
         if is_reference:
-            semantic_height = 0.001
+            semantic_height = reference.reference_height_m
         else:
             semantic_height = (
                 _positive_number(semantic.approx_size_cm[2] / 100.0) if semantic is not None else None
