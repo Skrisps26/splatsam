@@ -2,7 +2,7 @@
 
 ## Boundary status
 
-The offline synthetic acceptance gates pass. The required small live Meta-format spike remains **blocked: MODEL_API_KEY is absent**. No working live request or live-model output is claimed. Supply the key through the environment, not chat or git; the spike remains subject to the USD 10 Phase A cap.
+The offline synthetic acceptance gates pass. The required small live Meta-format spike now also **passes**: Wonder structured JSON, Spark image input, Files upload and streamed SAM completed on synthetic media. Recorded cost is **USD 0.028378**, with no pending reservations. Saved fixtures replay through Pydantic and the official SAM parser (two boxes and two masks). Credentials were loaded from ignored `.env` without printing them.
 
 No real video has been processed, no real scenario family/test seal has been created, no real final test has run, and no GPU job/pod has been created. Phase B requires the user's literal **go**, then the separate input/mask/spend confirmations below.
 
@@ -34,9 +34,9 @@ Paper-homography scale error: **0.251%**. Maximum planar-size error: **8.13%**. 
 
 ## Spend and risks
 
-- **Meta spent: USD 0. GPU spent: USD 0.** The actual project GPU ledger has no resources. No account-credit balance has been verified.
+- **Meta spent: USD 0.028378. GPU spent: USD 0.** The actual project GPU ledger has no resources. No account-credit balance has been verified.
 - Hard gates: USD 10 Phase A; USD 50 cumulative development; configured USD 70 minimum reserve. No reserve has been spent. RunPod optional cap is USD 4; no fallback provider is authorized merely because RunPod is unavailable.
-- Live Meta formats are documentation-grounded but **not exercised**; synthetic response fixtures cannot substitute for the missing successful live spike. Real perception refuses to proceed without its observed fixture evidence.
+- Live synthetic request formats and observed usage are now exercised; exact requests/results are in `tests/fixtures/meta_api_spike.json` and API notes. This verifies transport/schema/parser compatibility, not real-video quality, Files-ID lifetime, box prompting or long-video stability.
 - RunPod MCP is not mounted. No SAM 3D weights, upstream GPU runtime, provider launch or provider cleanup has been exercised. The optional HTTP adapter/server is proven only with the CPU stub. GPU mesh promotion is not active; the working demonstration uses native primitives. A frozen scene hash cannot silently change after sealing.
 - The 32.5% instability rate is a material contact/physics-fidelity risk. Do not suppress these failures or claim physical accuracy from silhouette agreement.
 - Reconstruction heights/hidden surfaces and nominal mass/friction are estimates unless overridden by measurements. Thin objects are resolution-sensitive; paper curl, parallax and camera tilt cause scale uncertainty. Live masks may fail or merge identical instances; overlays require human approval.
@@ -44,7 +44,7 @@ Paper-homography scale error: **0.251%**. Maximum planar-size error: **8.13%**. 
 
 ## Exact Phase B sequence after go
 
-1. **Prerequisite:** provide MODEL_API_KEY through the environment and complete the <=USD 10 synthetic format spike; save observed Wonder JSON, Spark image, Files upload and SAM responses in fixtures/API notes. Do not send personal data as a format test.
+1. **Completed prerequisite:** the <=USD 10 synthetic format spike passed for Wonder JSON, Spark image, Files upload and SAM. Keep the credential in the environment/ignored `.env`; no personal data was sent.
 2. **B1 — confirm input/privacy ready:** user places the intended video in ignored `data/videos/`, confirms its hash and that only the intended workspace may be sent externally. Optional measurements go in ignored `data/measured.yaml`. Authorize B1, run real perception and primitive scene construction, show overlays/diagnostics, then **stop until the user approves the masks**. No real seal or evaluation yet.
 3. **B2 — confirm masks and evaluation input ready:** freeze the real family and scene, seal a fresh real 200-scenario test set, run the default baseline and bounded train/validation improvement loop. Keep test specs inaccessible to the loop. Record all accept/reject decisions and costs.
 4. **B3 — optional, separately approved:** only if requested and the missing provider integration/access is available, verify gated weights/license and live price, authorize <=USD 4 RunPod spend, batch one bounded reconstruction job, cache results, stop resources and independently verify cleanup. Otherwise skip with primitives. Do not modify a sealed scene silently; optional geometry cannot invalidate the frozen evaluation contract.
@@ -54,7 +54,7 @@ Authorization lives only in ignored `data/authorization.json`; README documents 
 
 ## Phase B planning estimate
 
-**[INFERENCE — not a quote or measured bill]** Budget approximately **USD 2–5 Meta** for a successful primitive-path live run, excluding the still-required Phase A spike and extra retries. An illustrative workload is ten Wonder calls with 10,000 input / 2,048 output tokens each (USD 0.8096), twenty-four Spark calls at the same token counts (USD 0.508896), and four 15 s / 30 fps SAM noun-phrase requests (USD 0.36): about USD 1.68 before uncertainty. Actual image tokens, frame rate, phrase count, diagnostics and retries vary; request reservations and the global cap, not this estimate, authorize spending. Unknown pricing uses the conservative configured fallback.
+**[INFERENCE — not a quote or measured bill]** Budget approximately **USD 2–5 additional Meta** for a successful primitive-path live run, excluding extra retries. An illustrative workload is ten Wonder calls with 10,000 input / 2,048 output tokens each (USD 0.8096), twenty-four Spark calls at the same token counts (USD 0.508896), and four 15 s / 30 fps SAM noun-phrase requests (USD 0.36): about USD 1.68 before uncertainty. Actual image tokens, frame rate, phrase count, diagnostics and retries vary; request reservations and the global cap, not this estimate, authorize spending. Unknown pricing uses the conservative configured fallback.
 
 GPU estimate is **USD 0 by default**. Optional RunPod spending cannot exceed **USD 4** and requires live price/access checks and explicit approval. All CPU simulation remains local.
 

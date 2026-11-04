@@ -1,0 +1,309 @@
+{
+  "ledger": {
+    "committed_usd": "0.028378",
+    "dispatch_blocked": false,
+    "pending_reservations": 0,
+    "pending_usd": "0",
+    "phase_totals": {
+      "A": {
+        "committed_usd": "0.028378",
+        "pending_usd": "0",
+        "total_usd": "0.028378"
+      }
+    },
+    "total_usd": "0.028378"
+  },
+  "requests": {
+    "files": {
+      "file_artifact": "runs/spike-api/synthetic_media/synthetic-spike.mp4",
+      "file_sha256": "a968d71092d7b56799f4ce64212bd710d57853c5b01990bc2439de459de5aa23",
+      "method": "POST",
+      "purpose": "user_data",
+      "url": "https://api.meta.ai/v1/files"
+    },
+    "sam": {
+      "input": [
+        {
+          "content": [
+            {
+              "text": "colored rectangle",
+              "type": "input_text"
+            },
+            {
+              "file_id": "file-1455888273181349",
+              "type": "input_video"
+            }
+          ],
+          "role": "user",
+          "type": "message"
+        }
+      ],
+      "model": "sam-3.1",
+      "stream": true
+    },
+    "spark": {
+      "input": [
+        {
+          "content": [
+            {
+              "text": "synthetic image only",
+              "type": "input_text"
+            },
+            {
+              "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAuklEQVRIDbXBQQEAEBQFwX1ZRJBOAulEkGBLCMDF4c9EpVJUKkWlUlQqRaVSVCpFpVJUKkWlUlQqReVlj86nNheXqLzs0fnU5uISlZc9Op/aXFyi8rJH51Obi0tUXvbofGpzcYnKyx6dT20uLlF52aPzqc3FJSove3Q+tbm4ROVlj86nNheXqLzs0fnU5uISlZc9Op/aXFyi8rJH51Obi0tUKkWlUlQqRaVSVCpFpVJUKkWlUlQqRaXSAS6TfEEnbJ5AAAAAAElFTkSuQmCC",
+              "type": "input_image"
+            }
+          ],
+          "role": "user"
+        }
+      ],
+      "instructions": "List the single synthetic colored rectangle as an object.",
+      "max_output_tokens": 2048,
+      "model": "muse-spark-1.3",
+      "text": {
+        "format": {
+          "name": "objectlist",
+          "schema": {
+            "$defs": {
+              "ObjectInfo": {
+                "additionalProperties": false,
+                "properties": {
+                  "approx_size_cm": {
+                    "items": {
+                      "type": "number"
+                    },
+                    "maxItems": 3,
+                    "minItems": 3,
+                    "title": "Approx Size Cm",
+                    "type": "array"
+                  },
+                  "count": {
+                    "maximum": 20,
+                    "minimum": 1,
+                    "title": "Count",
+                    "type": "integer"
+                  },
+                  "graspable": {
+                    "title": "Graspable",
+                    "type": "boolean"
+                  },
+                  "id": {
+                    "title": "Id",
+                    "type": "string"
+                  },
+                  "material_guess": {
+                    "title": "Material Guess",
+                    "type": "string"
+                  },
+                  "name": {
+                    "title": "Name",
+                    "type": "string"
+                  },
+                  "schema_version": {
+                    "title": "Schema Version",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "schema_version",
+                  "id",
+                  "name",
+                  "material_guess",
+                  "approx_size_cm",
+                  "graspable",
+                  "count"
+                ],
+                "title": "ObjectInfo",
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "properties": {
+              "objects": {
+                "items": {
+                  "$ref": "#/$defs/ObjectInfo"
+                },
+                "title": "Objects",
+                "type": "array"
+              },
+              "schema_version": {
+                "title": "Schema Version",
+                "type": "integer"
+              },
+              "source": {
+                "enum": [
+                  "synthetic",
+                  "recorded",
+                  "live",
+                  "fallback"
+                ],
+                "title": "Source",
+                "type": "string"
+              }
+            },
+            "required": [
+              "schema_version",
+              "objects",
+              "source"
+            ],
+            "title": "ObjectList",
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        }
+      }
+    },
+    "wonder": {
+      "input": "Synthetic tabletop format check only.",
+      "instructions": "Return a bounded scenario family for a synthetic tabletop scene.",
+      "max_output_tokens": 2048,
+      "model": "muse-wonder-1.0",
+      "text": {
+        "format": {
+          "name": "scenariofamily",
+          "schema": {
+            "additionalProperties": false,
+            "properties": {
+              "clutter_count": {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "title": "Clutter Count",
+                "type": "array"
+              },
+              "friction_scale": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "title": "Friction Scale",
+                "type": "array"
+              },
+              "jitter_m": {
+                "maximum": 0.04,
+                "minimum": 0,
+                "title": "Jitter M",
+                "type": "number"
+              },
+              "mass_scale": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "title": "Mass Scale",
+                "type": "array"
+              },
+              "occluder_count": {
+                "items": {
+                  "type": "integer"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "title": "Occluder Count",
+                "type": "array"
+              },
+              "occluder_height": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "title": "Occluder Height",
+                "type": "array"
+              },
+              "schema_version": {
+                "title": "Schema Version",
+                "type": "integer"
+              },
+              "yaw_range": {
+                "items": {
+                  "type": "number"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "title": "Yaw Range",
+                "type": "array"
+              }
+            },
+            "required": [
+              "schema_version",
+              "jitter_m",
+              "yaw_range",
+              "friction_scale",
+              "mass_scale",
+              "clutter_count",
+              "occluder_count",
+              "occluder_height"
+            ],
+            "title": "ScenarioFamily",
+            "type": "object"
+          },
+          "strict": true,
+          "type": "json_schema"
+        }
+      }
+    }
+  },
+  "sam": {
+    "frames_billed": 50,
+    "output_text": "<0f>0<|box;x1=8;y1=10;x2=24;y2=21;w=32;h=32|><|mask;x=0;y=0;data=12,17,!!!!!'y:LvUGf|>\n<1f>0<|box;x1=9;y1=10;x2=25;y2=21;w=32;h=32|><|mask;x=0;y=0;data=12,17,~!!!!M!1!`?xFJ$K*^Or][S(y(OW4vm3]C9mO-ydFx7xbI:pBt?:iXn|>\n",
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "video_frames_processed": 50
+    }
+  },
+  "source": "live_observed_synthetic_spike",
+  "spark": {
+    "objects": [
+      {
+        "approx_size_cm": [
+          5,
+          5,
+          0.1
+        ],
+        "count": 1,
+        "graspable": false,
+        "id": "rect_1",
+        "material_guess": "synthetic",
+        "name": "synthetic colored rectangle",
+        "schema_version": 1
+      }
+    ],
+    "schema_version": 1,
+    "source": "synthetic"
+  },
+  "wonder": {
+    "clutter_count": [
+      1,
+      5
+    ],
+    "friction_scale": [
+      0.6,
+      1.4
+    ],
+    "jitter_m": 0.002,
+    "mass_scale": [
+      0.7,
+      1.3
+    ],
+    "occluder_count": [
+      0,
+      3
+    ],
+    "occluder_height": [
+      0.005,
+      0.04
+    ],
+    "schema_version": 1,
+    "yaw_range": [
+      -0.7853981633974483,
+      0.7853981633974483
+    ]
+  }
+}

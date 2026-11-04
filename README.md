@@ -44,7 +44,7 @@ Paired gain: **13.0 percentage points**, paired-bootstrap 95% interval **8.5–1
 - Train/validation/test: **150 / 100 / 200** concrete scenarios from disjoint seed ranges.
 - Validation: **1,200** planner-scenario evaluations, **700** fresh simulations, on the same 100 validation seeds. Validation selected edits and is optimistic.
 - **65/200 instability failures remain for both planners.** Solver/estimated-geometry limitations are visible, not relabeled or excluded from the denominator.
-- Meta spend **$0**, GPU spend **$0**. The live format spike is blocked because `MODEL_API_KEY` is absent.
+- The synthetic pipeline itself spent **$0**. A subsequent live synthetic format spike verified Wonder JSON, Spark image input, Files upload and streamed SAM for **$0.028378 Meta total**; GPU spend remains **$0**. Observed fixtures are saved in `tests/fixtures/meta_api_spike.json`.
 
 Inspect the [full report](demo_data/report.md), [machine-readable report](demo_data/report.json), [sanitized trajectory](runs/evidence/trajectory.jsonl), and [write-up](docs/writeup.md). These numbers are not real-video results or evidence of real-robot transfer.
 
@@ -78,7 +78,7 @@ Phase A builds and tests with synthetic data under `data_synth/`. It never proce
 
 ### Live prerequisites and confirmations
 
-1. Supply `MODEL_API_KEY` through the environment, never chat or the repo. Verify the documented formats on a tiny synthetic clip with `uv run python scripts/spike_api.py --max-usd 10`. This is opt-in; without a key it exits blocked and spends nothing. [API notes](docs/api_notes.md) distinguish documentation, public-parser fixtures and observed live evidence.
+1. Supply `MODEL_API_KEY` through the environment or ignored `.env`, never chat or the repo. The small synthetic format spike has passed; rerunning it is opt-in (`uv run --env-file .env python scripts/spike_api.py --max-usd 10`). [API notes](docs/api_notes.md) contain observed request formats, fixture and usage evidence.
 2. Say **go**, confirm the real video is ready in ignored `data/videos/`, and confirm it contains no personal documents, screens, mail or ID cards. B1 binds authorization to its SHA256 and produces overlays/scene only. **User mask approval is required before B2.**
 3. Confirm B2 inputs: freeze the scene/family, seal fresh `data/splits/`, run baseline and train/validation improvement. No real held-out outcomes are read here.
 4. B3 is optional and additionally spend-approved. RunPod was selected, but no RunPod MCP lifecycle route is mounted; the current workflow safely skips it and retains primitives. HF access/license and verified shutdown controls are prerequisites, never reasons to rent a resource speculatively.

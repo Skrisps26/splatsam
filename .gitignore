@@ -13,4 +13,5 @@ runs/*
 !runs/evidence/
 runs/evidence/*
 !runs/evidence/trajectory.jsonl
+!runs/evidence/meta_spike_trajectory.jsonl
 *.egg-info/

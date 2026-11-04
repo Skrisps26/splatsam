@@ -12,11 +12,11 @@ Primary sources: [API reference](https://dev.meta.ai/docs/api-reference), [Respo
 
 ## Live-confirmed
 
-No live calls have been made in this checkout. `scripts/spike_api.py` is opt-in and records an appended entry here only after all three synthetic requests and the SAM upload/stream complete with observed responses. A missing key exits blocked without dispatch or spend.
+`scripts/spike_api.py` is opt-in. Successful synthetic confirmations are recorded below; a missing key exits blocked without dispatch or spend.
 
 ## Unverified
 
-Until a successful opt-in spike is recorded, API compatibility, actual token/frame usage, Files-ID lifetime, Spark image behavior, and streamed SAM parser output remain unverified. Documentation evidence is not live evidence.
+The synthetic spike below confirms basic API/schema/image/upload/stream/parser compatibility and observed billing. Files-ID lifetime, real-video quality, box prompting, long-video stability and live rate-limit recovery remain unverified. Documentation evidence is not live evidence for those paths.
 
 ## Implemented request boundaries
 
@@ -31,3 +31,250 @@ Until a successful opt-in spike is recorded, API compatibility, actual token/fra
 
 The README's `output["gs"].save_ply()` example is not the only output. The official [pipeline mesh postprocessing](https://github.com/facebookresearch/sam-3d-objects/blob/main/sam3d_objects/pipeline/inference_pipeline.py) constructs `outputs["glb"]`, which the [pointmap pipeline](https://github.com/facebookresearch/sam-3d-objects/blob/main/sam3d_objects/pipeline/inference_pipeline_pointmap.py) returns. The optional server exports that real mesh through trimesh. No weights or GPU inference were loaded in Phase A; only the explicitly labeled CPU stub and HTTP/cache integration were exercised. Real model runtime, gated weights/license and provider lifecycle remain Phase B prerequisites.
 
+
+## Live-confirmed spike
+
+- UTC: `2026-11-04T16:26:55+00:00`
+- Observed successful Wonder JSON-schema, Spark image, Files upload, and streamed SAM requests. Local fixture: `runs/spike-api/observed_fixture.json`; committed copy: `tests/fixtures/meta_api_spike.json`. Replaying the observed SAM text through the official parser yields two boxes and two masks.
+- Ledger snapshot recorded at completion: `{"committed_usd": "0.028378", "dispatch_blocked": false, "pending_reservations": 0, "pending_usd": "0", "phase_totals": {"A": {"committed_usd": "0.028378", "pending_usd": "0", "total_usd": "0.028378"}}, "total_usd": "0.028378"}`. This note records format evidence only; it is not a quality or real-video claim.
+
+Working wire requests (synthetic media only, bearer header omitted):
+
+```json
+{
+  "files": {
+    "file_artifact": "runs/spike-api/synthetic_media/synthetic-spike.mp4",
+    "file_sha256": "a968d71092d7b56799f4ce64212bd710d57853c5b01990bc2439de459de5aa23",
+    "method": "POST",
+    "purpose": "user_data",
+    "url": "https://api.meta.ai/v1/files"
+  },
+  "sam": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "colored rectangle",
+            "type": "input_text"
+          },
+          {
+            "file_id": "file-1455888273181349",
+            "type": "input_video"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "model": "sam-3.1",
+    "stream": true
+  },
+  "spark": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "synthetic image only",
+            "type": "input_text"
+          },
+          {
+            "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAuklEQVRIDbXBQQEAEBQFwX1ZRJBOAulEkGBLCMDF4c9EpVJUKkWlUlQqRaVSVCpFpVJUKkWlUlQqReVlj86nNheXqLzs0fnU5uISlZc9Op/aXFyi8rJH51Obi0tUXvbofGpzcYnKyx6dT20uLlF52aPzqc3FJSove3Q+tbm4ROVlj86nNheXqLzs0fnU5uISlZc9Op/aXFyi8rJH51Obi0tUKkWlUlQqRaVSVCpFpVJUKkWlUlQqRaXSAS6TfEEnbJ5AAAAAAElFTkSuQmCC",
+            "type": "input_image"
+          }
+        ],
+        "role": "user"
+      }
+    ],
+    "instructions": "List the single synthetic colored rectangle as an object.",
+    "max_output_tokens": 2048,
+    "model": "muse-spark-1.3",
+    "text": {
+      "format": {
+        "name": "objectlist",
+        "schema": {
+          "$defs": {
+            "ObjectInfo": {
+              "additionalProperties": false,
+              "properties": {
+                "approx_size_cm": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "title": "Approx Size Cm",
+                  "type": "array"
+                },
+                "count": {
+                  "maximum": 20,
+                  "minimum": 1,
+                  "title": "Count",
+                  "type": "integer"
+                },
+                "graspable": {
+                  "title": "Graspable",
+                  "type": "boolean"
+                },
+                "id": {
+                  "title": "Id",
+                  "type": "string"
+                },
+                "material_guess": {
+                  "title": "Material Guess",
+                  "type": "string"
+                },
+                "name": {
+                  "title": "Name",
+                  "type": "string"
+                },
+                "schema_version": {
+                  "title": "Schema Version",
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "schema_version",
+                "id",
+                "name",
+                "material_guess",
+                "approx_size_cm",
+                "graspable",
+                "count"
+              ],
+              "title": "ObjectInfo",
+              "type": "object"
+            }
+          },
+          "additionalProperties": false,
+          "properties": {
+            "objects": {
+              "items": {
+                "$ref": "#/$defs/ObjectInfo"
+              },
+              "title": "Objects",
+              "type": "array"
+            },
+            "schema_version": {
+              "title": "Schema Version",
+              "type": "integer"
+            },
+            "source": {
+              "enum": [
+                "synthetic",
+                "recorded",
+                "live",
+                "fallback"
+              ],
+              "title": "Source",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_version",
+            "objects",
+            "source"
+          ],
+          "title": "ObjectList",
+          "type": "object"
+        },
+        "strict": true,
+        "type": "json_schema"
+      }
+    }
+  },
+  "wonder": {
+    "input": "Synthetic tabletop format check only.",
+    "instructions": "Return a bounded scenario family for a synthetic tabletop scene.",
+    "max_output_tokens": 2048,
+    "model": "muse-wonder-1.0",
+    "text": {
+      "format": {
+        "name": "scenariofamily",
+        "schema": {
+          "additionalProperties": false,
+          "properties": {
+            "clutter_count": {
+              "items": {
+                "type": "integer"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "title": "Clutter Count",
+              "type": "array"
+            },
+            "friction_scale": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "title": "Friction Scale",
+              "type": "array"
+            },
+            "jitter_m": {
+              "maximum": 0.04,
+              "minimum": 0,
+              "title": "Jitter M",
+              "type": "number"
+            },
+            "mass_scale": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "title": "Mass Scale",
+              "type": "array"
+            },
+            "occluder_count": {
+              "items": {
+                "type": "integer"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "title": "Occluder Count",
+              "type": "array"
+            },
+            "occluder_height": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "title": "Occluder Height",
+              "type": "array"
+            },
+            "schema_version": {
+              "title": "Schema Version",
+              "type": "integer"
+            },
+            "yaw_range": {
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 2,
+              "minItems": 2,
+              "title": "Yaw Range",
+              "type": "array"
+            }
+          },
+          "required": [
+            "schema_version",
+            "jitter_m",
+            "yaw_range",
+            "friction_scale",
+            "mass_scale",
+            "clutter_count",
+            "occluder_count",
+            "occluder_height"
+          ],
+          "title": "ScenarioFamily",
+          "type": "object"
+        },
+        "strict": true,
+        "type": "json_schema"
+      }
+    }
+  }
+}
+```
