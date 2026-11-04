@@ -123,3 +123,5 @@ Valid individual measurements override estimates; malformed values are diagnosed
 Simulation only; floating hand/no arm or IK; rule-based parameter tuning, not a neural policy; no claimed real-robot transfer. Object heights and hidden geometry are estimated, and mass/friction are estimates unless labeled measured. Footprint IoU does not validate height, mass, friction or collision geometry. Paper curl, object height and camera tilt cause scale uncertainty of a few percent; thin objects remain sensitive to raster resolution and parallax. Results are specific to the captured scene. The local hash seal guards mistakes, not a malicious repository owner.
 
 Library searches and implementation choices: [decisions](docs/decisions.md). Dashboard layout and observed surface checks: [design](DESIGN.md).
+
+Measured offline checks, unresolved prerequisites, spend estimates and the exact gated live sequence: [Phase A readiness](docs/readiness.md).
