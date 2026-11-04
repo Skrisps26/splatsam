@@ -278,3 +278,8 @@ Working wire requests (synthetic media only, bearer header omitted):
   }
 }
 ```
+
+## Live B1 box-prompt confirmation
+
+After the laptop noun-phrase path failed, a separate SAM box request worked on the authorized 480×864 phone video. The official `build_object_prompt` received `size=(480,864)`, one object with ID 1, frame 0 and half-open box `(214,300,424,582)`. Its emitted token text was sent as the sole `input_text` alongside the uploaded `input_video.file_id`, never combined with the noun phrase. The completed stream parsed into 336 box and 336 mask records. These are real model predictions from an operator-provided box, not synthetic masks. Raw real-video payloads and credentials are not published.
+

@@ -128,6 +128,9 @@ Synthetic runs retain the A4 `reference` configuration. Real B1 uses the separat
 
 The laptop elevation is a model-specification estimate, not a camera-height measurement. The homography is fitted on its lid plane; without metric camera height/pose, floor-plane scale/position bias remains uncorrected and is listed in the report. Near-overhead framing reduces ambiguity but does not prove the real scene's metric accuracy.
 
+Optional operator-assisted recovery uses ignored `data/perception.yaml`: `box_prompts` maps a stable object ID to a source-frame `size`, `frame_index`, `box` and `object_id`; `object_overrides` may correct only a detected object's name, estimated material or graspable flag. These do not fabricate masks or measured physics. SAM still predicts every mask, and semantic corrections are recorded with operator provenance in the trajectory. Do not describe such a run as unassisted.
+
+
 
 Library searches and implementation choices: [decisions](docs/decisions.md). Dashboard layout and observed surface checks: [design](DESIGN.md).
 

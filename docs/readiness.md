@@ -4,7 +4,7 @@
 
 The offline synthetic acceptance gates pass. The required small live Meta-format spike now also **passes**: Wonder structured JSON, Spark image input, Files upload and streamed SAM completed on synthetic media. Recorded cost is **USD 0.028378**, with no pending reservations. Saved fixtures replay through Pydantic and the official SAM parser (two boxes and two masks). Credentials were loaded from ignored `.env` without printing them.
 
-No real video has been processed, no real scenario family/test seal has been created, no real final test has run, and no GPU job/pod has been created. Phase B requires the user's literal **go**, then the separate input/mask/spend confirmations below.
+At the Phase A boundary, no real video, real seal, real final evaluation or GPU job had run. The user subsequently authorized Phase B and explicitly approved sending the supplied video. B1 has now completed with operator-assisted laptop box prompting and a user-confirmed ball label correction. Mask approval is still required before B2; no real seal or evaluation exists.
 
 Repository: https://github.com/Skrisps26/splatsam . Implementation checkpoint tested from GitHub: `196c0ed`. Working directory: `/tmp/splatsam`. Read-only local dashboard: http://127.0.0.1:8501 .
 
@@ -58,4 +58,4 @@ Authorization lives only in ignored `data/authorization.json`; README documents 
 
 GPU estimate is **USD 0 by default**. Optional RunPod spending cannot exceed **USD 4** and requires live price/access checks and explicit approval. All CPU simulation remains local.
 
-**STOP: waiting for go.**
+**Current gate: B1 complete; waiting for user mask approval and B2 input confirmation.** Cumulative Meta spend is USD 0.552682; GPU spend remains USD 0. The Phase A measurements above remain historical synthetic evidence.

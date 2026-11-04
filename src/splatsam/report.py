@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from splatsam.llm.schemas import SceneSpec
-from splatsam.utils import digest, save_json
+from splatsam.utils import digest, load_json, save_json
 
 LIMITS = [
     "Simulation only; floating two-finger hand, no arm or inverse kinematics.",
@@ -41,6 +41,13 @@ def generate_report(
             "This is an estimated reference height, not a camera measurement. Its plane-offset "
             "scale/position bias remains uncorrected without metric camera height or pose."
         )
+    assistance_path = run_dir / "perception_assistance.json"
+    assistance = load_json(assistance_path) if assistance_path.exists() else None
+    if assistance:
+        limits.append(
+            "Perception was operator-assisted with a source-frame box prompt and/or semantic "
+            "corrections. All masks remain SAM predictions; this is not an unassisted run."
+        )
     report = {
         "schema_version": 1,
         "mode": scene.source,
@@ -49,6 +56,7 @@ def generate_report(
         "measurement": "physical lift >=5cm throughout 2s stationary hold, finger contact at end",
         "held_out": comparison,
         "illustrative_only": scene.source != "live",
+        "perception_assistance": assistance,
         "rounds": history,
         "accepted_edits": sum(bool(r.get("accepted")) for r in history),
         "validation_evaluations": validation_evaluations,
@@ -141,7 +149,7 @@ def generate_report(
         "",
         "## Reconstruction and physics",
         "",
-        f"Scale source: {scene.scale_source}; independently measured synthetic error: {scene.scale_error}. Sheet self-consistency: {scene.reference_validation}.",
+        f"Scale source: {scene.scale_source}; independently measured synthetic error: {scene.scale_error}. Reference self-consistency: {scene.reference_validation}.",
         "",
         "| ID | Shape/source | IoU | Mass kg/source | Friction/source | Height source |",
         "| --- | --- | --- | --- | --- | --- |",
@@ -150,6 +158,6 @@ def generate_report(
         lines.append(
             f"| {o.id} | {o.shape}/{o.reconstruction_source} | {o.consistency_iou} | {o.mass:.4g}/{o.mass_source} | {o.friction:.3g}/{o.friction_source} | {o.height_source} |"
         )
-    lines += ["", "## Spend", "", str(costs), "", "## Limits", ""] + ["- " + s for s in LIMITS]
+    lines += ["", "## Spend", "", str(costs), "", "## Limits", ""] + ["- " + s for s in limits]
     (run_dir / "report.md").write_text("\n".join(lines) + "\n")
     return report

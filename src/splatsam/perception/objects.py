@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import imageio.v2 as imageio
 
-from splatsam.llm.schemas import ObjectList
+from splatsam.llm.schemas import ObjectInfo, ObjectList
 from splatsam.perception.frames import FrameSample
 
 if TYPE_CHECKING:
@@ -74,6 +74,7 @@ def identify_objects(
     *,
     fixture: ObjectList | None = None,
     reference: dict | None = None,
+    overrides: dict[str, dict] | None = None,
 ) -> ObjectList:
     """Return semantic priors, never geometry or positions from hidden scene truth.
 
@@ -102,4 +103,22 @@ def identify_objects(
         input=model_input,
         stage="objects",
     )
-    return ObjectList.model_validate(result)
+    result = ObjectList.model_validate(result)
+    if overrides:
+        corrected = []
+        for item in result.objects:
+            patch = overrides.get(item.id, {})
+            if set(patch) - {"name", "material_guess", "graspable"}:
+                raise ValueError(
+                    "operator object overrides may change only name, material_guess or graspable"
+                )
+            corrected.append(ObjectInfo.model_validate(item.model_dump() | patch))
+        result = result.model_copy(update={"objects": corrected})
+        client._trajectory(
+            provenance="operator",
+            stage="object_overrides",
+            model="operator",
+            request={"overrides": overrides},
+            response=result,
+        )
+    return result

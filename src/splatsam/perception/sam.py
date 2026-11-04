@@ -247,9 +247,12 @@ class MockSamClient:
 class SamClient:
     """Real SAM adapter consuming only official ``meta_sam_parser`` records."""
 
-    def __init__(self, client: ModelClient, output_dir: Path) -> None:
+    def __init__(
+        self, client: ModelClient, output_dir: Path, *, box_prompts: dict[str, dict] | None = None
+    ) -> None:
         self.client = client
         self.output_dir = Path(output_dir)
+        self.box_prompts = box_prompts or {}
 
     def _recover_with_box(
         self, video_path: Path, phrase: str, records: Iterable[Any], width: int, height: int
@@ -375,7 +378,11 @@ class SamClient:
             for attempt in range(3):
                 try:
                     if attempt == 0:
-                        records = _records(self.client.sam_request(video_path, info.name))
+                        records = _records(
+                            self.client.sam_request(
+                                video_path, info.name, box_prompt=self.box_prompts.get(info.id)
+                            )
+                        )
                     elif attempt == 1:
                         records = _records(
                             self.client.sam_request(video_path, _refined_phrase(self.client, info))
@@ -464,7 +471,7 @@ def save_overlays(video_path: Path, tracks: list[MaskTrack], out_dir: Path) -> P
             left, top, _, _ = frame.box
             cv2.putText(
                 overlay,
-                track.id,
+                f"{track.name} [{track.id.rsplit(':', 1)[-1]}]",
                 (int(left), max(14, int(top) - 3)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.45,

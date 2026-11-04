@@ -40,7 +40,7 @@ def _positive_number(value: Any) -> float | None:
 
 def _measurement_objects(path: Path | None) -> tuple[dict[str, dict[str, Any]], list[str]]:
     """Load the deliberately small measured-physics override format without failing a scene."""
-    if path is None:
+    if path is None or not path.exists():
         return {}, []
     try:
         loaded = yaml.safe_load(path.read_text())

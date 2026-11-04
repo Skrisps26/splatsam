@@ -154,6 +154,7 @@ def perceive(
     tracks_path=None,
     measured_path=None,
     reference_config=None,
+    perception_options=None,
     source="synthetic",
     seed=42,
 ):
@@ -166,8 +167,28 @@ def perceive(
 
     frames = sample_frames(video, out_dir=run_dir / "frames")
     reference_settings = config()["reference"] if reference_config is None else reference_config
-    objects = identify_objects(frames, client, fixture=fixture, reference=reference_settings)
-    sam = MockSamClient(tracks_path) if tracks_path else SamClient(client, run_dir)
+    options = perception_options or {}
+    if options:
+        save_json(
+            run_dir / "perception_assistance.json",
+            {
+                "source": "operator",
+                "box_prompt_object_ids": sorted(options.get("box_prompts", {})),
+                "object_overrides": options.get("object_overrides", {}),
+            },
+        )
+    objects = identify_objects(
+        frames,
+        client,
+        fixture=fixture,
+        reference=reference_settings,
+        overrides=options.get("object_overrides"),
+    )
+    sam = (
+        MockSamClient(tracks_path)
+        if tracks_path
+        else SamClient(client, run_dir, box_prompts=options.get("box_prompts"))
+    )
     tracks = sam.track(video, objects)
     save_json(run_dir / "objects.json", objects)
     save_json(run_dir / "tracks.json", [t.model_dump(mode="json") for t in tracks])
@@ -446,12 +467,19 @@ def live(args):
             raise RuntimeError(
                 "Run the bounded synthetic scripts/spike_api.py format verification before sending real video"
             )
+        options_path = ROOT / "data/perception.yaml"
+        perception_options = {}
+        if options_path.exists():
+            import yaml
+
+            perception_options = yaml.safe_load(options_path.read_text()) or {}
         scene, _, _ = perceive(
             video,
             client,
             run_dir,
             measured_path=ROOT / "data/measured.yaml",
             reference_config=config().get("live_reference", config()["reference"]),
+            perception_options=perception_options,
             source="live",
             seed=args.seed,
         )
