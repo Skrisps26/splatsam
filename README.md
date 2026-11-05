@@ -11,7 +11,84 @@ Built for the **Meta Global AI Developer Hackathon** (Indie Track / Push the Fro
   <img src="docs/architecture.svg" alt="SplatSAM Pipeline Architecture" width="100%">
 </p>
 
+<details open>
+<summary><b>View Interactive Mermaid Architecture Flowchart</b></summary>
+<br/>
 
+```mermaid
+flowchart TD
+    subgraph P1 ["Stage 01: Multimodal Perception & Tracking"]
+        direction TB
+        V["Tabletop Workspace Video<br/>(MP4 / H.264)"]
+        SAM["Meta SAM 3.1<br/>Video Segmentation"]
+        WONDER_SEM["Meta Muse Wonder 1.0<br/>Semantic Scene Prior"]
+        TRACKS["Persistent Object Tracks<br/>(Bounding boxes & masks)"]
+        
+        V -->|Files API stream| SAM
+        V -->|Keyframe sampling| WONDER_SEM
+        SAM --> TRACKS
+        WONDER_SEM -->|Object classes & materials| TRACKS
+    end
+
+    subgraph P2 ["Stage 02: Metric Scene Reconstruction"]
+        direction TB
+        HOMO["Metric Scale Homography<br/>(Laptop / reference calibration)"]
+        WARP["Metric Planar Footprints<br/>(0.001 m / px resolution)"]
+        PRIMS["3D Primitive Assembly<br/>(Boxes, cylinders, spheres)"]
+        SIM_SCENE["MuJoCo Digital Twin<br/>(Metric geometry, mass & friction)"]
+
+        TRACKS --> HOMO
+        HOMO --> WARP
+        WARP --> PRIMS
+        PRIMS --> SIM_SCENE
+    end
+
+    subgraph P3 ["Stage 03: Autonomous Model Tuning Loop"]
+        direction TB
+        CURRICULUM["Scenario Curriculum<br/>(Pose jitter, mass & friction scales)"]
+        MUJOCO["MuJoCo Physics Engine<br/>(Parallel-Jaw Grasp Trials)"]
+        SPARK["Meta Muse Spark 1.3<br/>Visual Failure Critic"]
+        WONDER_OPT["Meta Muse Wonder 1.0<br/>Bounded Parameter Proposer"]
+        GATE["Paired Bootstrap Gate<br/>(p < 0.05, n=10,000, regression guard)"]
+
+        SIM_SCENE --> CURRICULUM
+        CURRICULUM --> MUJOCO
+        MUJOCO -->|Keyframes on slip / knock-over| SPARK
+        SPARK -->|Multimodal failure diagnosis| WONDER_OPT
+        MUJOCO -->|Physical outcome statistics| WONDER_OPT
+        WONDER_OPT -->|Bounded patch proposal| GATE
+        GATE -->|Accepted: update planner| MUJOCO
+        GATE -->|Rejected: history retained| WONDER_OPT
+    end
+
+    subgraph P4 ["Stage 04: Evaluation & Interactive Cockpit"]
+        direction TB
+        SEAL["One-Shot Sealed Benchmark<br/>(200 disjoint held-out scenarios)"]
+        COCKPIT["Streamlit Cockpit<br/>(Content-hash upload, 3D orbits, tuning traces)"]
+
+        GATE -.->|Final tuned parameters| SEAL
+        MUJOCO --> COCKPIT
+        SEAL --> COCKPIT
+    end
+
+    classDef default fill:#161b22,stroke:#30363d,stroke-width:1.5px,color:#c9d1d9;
+    classDef videoNode fill:#1e1b4b,stroke:#818cf8,stroke-width:2px,color:#e0e7ff;
+    classDef metaModel fill:#3b0764,stroke:#c084fc,stroke-width:2px,color:#f5d0fe;
+    classDef mathNode fill:#0f172a,stroke:#38bdf8,stroke-width:1.5px,color:#e2e8f0;
+    classDef physicsNode fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#ecfdf5;
+    classDef gateNode fill:#451a03,stroke:#fbbf24,stroke-width:2px,color:#fef3c7;
+    classDef cockpitNode fill:#18181b,stroke:#a1a1aa,stroke-width:2px,color:#fafafa;
+
+    class V videoNode;
+    class SAM,WONDER_SEM,SPARK,WONDER_OPT metaModel;
+    class HOMO,WARP,PRIMS,TRACKS mathNode;
+    class SIM_SCENE,MUJOCO,CURRICULUM physicsNode;
+    class GATE,SEAL gateNode;
+    class COCKPIT cockpitNode;
+```
+</details>
+
+---
 
 ## Quickstart
 
