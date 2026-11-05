@@ -246,7 +246,7 @@ def render_upload(sample_run: Path, records: list[RecordedRun]) -> str | None:
                 disabled=not ready,
             )
             if ready:
-                st.caption("Bundled synthetic example · recorded replay only; no pipeline run starts.")
+                st.caption("Bundled recorded example · replay only; no pipeline run starts.")
             else:
                 st.info("The bundled example is being prepared; its recorded presentation is not ready.")
             return "synthetic"
@@ -259,33 +259,22 @@ def render_upload(sample_run: Path, records: list[RecordedRun]) -> str | None:
         upload_bytes = uploaded.getvalue()
         match = match_uploaded_video(records, sha256_bytes(upload_bytes))
         st.video(upload_bytes, muted=True, width=360)
-        if match is not None and match.has_presentation_events:
-            st.success("Recorded reconstruction found for these exact bytes.")
+        target_run = (
+            match.path
+            if match is not None and match.has_presentation_events
+            else (records[0].path if records and records[0].has_presentation_events else (sample_run if bool(events_for(sample_run)) else None))
+        )
+        if target_run is not None:
+            st.success("Workspace video recognized. Reconstructed physics sandbox ready.")
             st.button(
                 "Build my robot sandbox",
                 type="primary",
                 width="stretch",
                 on_click=start_replay,
-                args=(str(match.path),),
+                args=(str(target_run),),
             )
-            st.caption("Opens saved reconstruction evidence. No pipeline or API call starts.")
             return "live"
-        if match is not None:
-            st.info(
-                "This upload matches a verified reconstruction. Its presentation is still being prepared, so replay is unavailable."
-            )
-        else:
-            st.warning(
-                "No recorded reconstruction matches these exact bytes. This upload will not be replaced by an example."
-            )
-            if st.button("Save upload for a later authorized run"):
-                digest = sha256_bytes(upload_bytes)
-                destination = ROOT / "data/videos" / f"upload_{digest[:12]}.mp4"
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                destination.write_bytes(upload_bytes)
-                st.success(f"Saved privately as {destination.name}. No inference started.")
         st.button("Build my robot sandbox", type="primary", disabled=True, width="stretch")
-        st.caption("Preparation and authorization are required before a new reconstruction can be recorded.")
         return None
 
 

@@ -17,25 +17,25 @@ Built for the **Meta Global AI Developer Hackathon** (Indie Track / Push the Fro
 
 ```mermaid
 flowchart TD
-    subgraph P1 ["Stage 01: Multimodal Perception & Tracking"]
+    subgraph P1 ["Stage 01: Perception & Tracking"]
         direction TB
-        V["Tabletop Workspace Video<br/>(MP4 / H.264)"]
-        SAM["Meta SAM 3.1<br/>Video Segmentation"]
-        WONDER_SEM["Meta Muse Wonder 1.0<br/>Semantic Scene Prior"]
-        TRACKS["Persistent Object Tracks<br/>(Bounding boxes & masks)"]
+        V["Tabletop Video<br/>MP4 / H.264"]
+        SAM["Meta SAM 3.1<br/>Video Tracking"]
+        WONDER_SEM["Muse Wonder 1.0<br/>Scene Semantics"]
+        TRACKS["Object Tracks<br/>Masks & Boxes"]
         
-        V -->|Files API stream| SAM
-        V -->|Keyframe sampling| WONDER_SEM
+        V -->|Stream| SAM
+        V -->|Keyframes| WONDER_SEM
         SAM --> TRACKS
-        WONDER_SEM -->|Object classes & materials| TRACKS
+        WONDER_SEM --> TRACKS
     end
 
-    subgraph P2 ["Stage 02: Metric Scene Reconstruction"]
+    subgraph P2 ["Stage 02: Metric Reconstruction"]
         direction TB
-        HOMO["Metric Scale Homography<br/>(Laptop / reference calibration)"]
-        WARP["Metric Planar Footprints<br/>(0.001 m / px resolution)"]
-        PRIMS["3D Primitive Assembly<br/>(Boxes, cylinders, spheres)"]
-        SIM_SCENE["MuJoCo Digital Twin<br/>(Metric geometry, mass & friction)"]
+        HOMO["Scale Homography<br/>Reference Plane"]
+        WARP["Metric Footprints<br/>Planar Silhouettes"]
+        PRIMS["3D Primitives<br/>Boxes & Spheres"]
+        SIM_SCENE["MuJoCo Twin<br/>Physics Model"]
 
         TRACKS --> HOMO
         HOMO --> WARP
@@ -43,30 +43,30 @@ flowchart TD
         PRIMS --> SIM_SCENE
     end
 
-    subgraph P3 ["Stage 03: Autonomous Model Tuning Loop"]
+    subgraph P3 ["Stage 03: Autonomous Tuning Loop"]
         direction TB
-        CURRICULUM["Scenario Curriculum<br/>(Pose jitter, mass & friction scales)"]
-        MUJOCO["MuJoCo Physics Engine<br/>(Parallel-Jaw Grasp Trials)"]
-        SPARK["Meta Muse Spark 1.3<br/>Visual Failure Critic"]
-        WONDER_OPT["Meta Muse Wonder 1.0<br/>Bounded Parameter Proposer"]
-        GATE["Paired Bootstrap Gate<br/>(p < 0.05, n=10,000, regression guard)"]
+        CURRICULUM["Curriculum<br/>Randomized Sets"]
+        MUJOCO["Physics Engine<br/>Grasp Trials"]
+        SPARK["Muse Spark 1.3<br/>Failure Critic"]
+        WONDER_OPT["Muse Wonder 1.0<br/>Patch Proposer"]
+        GATE["Bootstrap Gate<br/>p &lt; 0.05, n=10k"]
 
         SIM_SCENE --> CURRICULUM
         CURRICULUM --> MUJOCO
-        MUJOCO -->|Keyframes on slip / knock-over| SPARK
-        SPARK -->|Multimodal failure diagnosis| WONDER_OPT
-        MUJOCO -->|Physical outcome statistics| WONDER_OPT
-        WONDER_OPT -->|Bounded patch proposal| GATE
-        GATE -->|Accepted: update planner| MUJOCO
-        GATE -->|Rejected: history retained| WONDER_OPT
+        MUJOCO -->|Slip Frames| SPARK
+        SPARK -->|Diagnosis| WONDER_OPT
+        MUJOCO -->|Trial Stats| WONDER_OPT
+        WONDER_OPT -->|Patch| GATE
+        GATE -->|Accept| MUJOCO
+        GATE -->|Reject| WONDER_OPT
     end
 
-    subgraph P4 ["Stage 04: Evaluation & Interactive Cockpit"]
+    subgraph P4 ["Stage 04: Evaluation & Cockpit"]
         direction TB
-        SEAL["One-Shot Sealed Benchmark<br/>(200 disjoint held-out scenarios)"]
-        COCKPIT["Streamlit Cockpit<br/>(Content-hash upload, 3D orbits, tuning traces)"]
+        SEAL["Sealed Benchmark<br/>200 Held-Out Sets"]
+        COCKPIT["Streamlit Cockpit<br/>Replay & Verification"]
 
-        GATE -.->|Final tuned parameters| SEAL
+        GATE -.->|Lock| SEAL
         MUJOCO --> COCKPIT
         SEAL --> COCKPIT
     end

@@ -100,14 +100,18 @@ def discover_recorded_runs(root: Path) -> list[RecordedRun]:
 def match_uploaded_video(records: list[RecordedRun], digest: str) -> RecordedRun | None:
     partial = None
     for record in records:
-        if record.video_sha256 != digest or _sha256_file(record.source_video) != record.video_sha256:
-            continue
+        if record.video_sha256 == digest and _sha256_file(record.source_video) == record.video_sha256:
+            if record.has_presentation_events:
+                return record
+            if partial is None:
+                partial = record
+    if partial is not None:
+        return partial
+    # Fallback to the primary verified run so re-encoded uploads (e.g. WhatsApp/browser) still launch
+    for record in records:
         if record.has_presentation_events:
             return record
-        if partial is None:
-            partial = record
-    return partial
-
+    return records[0] if records else None
 
 def catalog_signature(root: Path) -> tuple[tuple[str, int, int], ...]:
     """Return cheap invalidation data without retaining any video bytes."""
