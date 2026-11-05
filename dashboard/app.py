@@ -21,7 +21,10 @@ ROOT = HERE.parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-from panels import model_legend, render_autopsy, render_final, render_scene, render_tuning
+from panels import (
+    media_file, model_legend, render_attempt_preview, render_autopsy, render_final,
+    render_scene, render_tuning, section, show_image, show_video,
+)
 from replay_data import event_seconds, load_events, project_state
 from run_catalog import (
     RecordedRun,
@@ -80,9 +83,35 @@ def cached_events(path: str, modified: int) -> list[dict]:
     return load_events(Path(path))
 
 
+def attempt_manifest(run: Path) -> dict:
+    """Only expose illustrative attempts that still match their saved source inputs."""
+    manifest = read_json(run / "presentation/attempt_preview/manifest.json")
+    hashes = manifest.get("source_hashes")
+    if manifest.get("preview_only") is not True or not isinstance(hashes, dict):
+        return {}
+    count = manifest.get("count")
+    if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 150:
+        return {}
+    try:
+        for name in ("scene.json", "family.json", "baseline_params.json"):
+            if sha256_bytes((run / name).read_bytes()) != hashes.get(name):
+                return {}
+    except OSError:
+        return {}
+    return manifest
+
+
 def events_for(run: Path) -> list[dict]:
     try:
-        return cached_events(str(run), (run / "events.jsonl").stat().st_mtime_ns)
+        events = cached_events(str(run), (run / "events.jsonl").stat().st_mtime_ns)
+        if attempt_manifest(run):
+            preview = run / "presentation/attempt_preview"
+            try:
+                events = events + cached_events(str(preview), (preview / "events.jsonl").stat().st_mtime_ns)
+                events.sort(key=lambda event: event["timestamp"])
+            except OSError:
+                pass
+        return events
     except OSError:
         return []
 
@@ -195,6 +224,8 @@ def chapter_changed() -> None:
 def render_stepper(state: dict) -> None:
     cells = []
     for index, (key, label) in enumerate(STAGES.items(), 1):
+        if key == "tune" and state.get("attempt_preview"):
+            label = "Grasp attempts"
         item = state.get("stages", {}).get(key, {})
         status = item.get("status", "pending")
         duration = item.get("duration_s")
@@ -280,8 +311,48 @@ def render_upload(sample_run: Path, records: list[RecordedRun]) -> str | None:
         return None
 
 
+def render_world_reveal(run: Path, media: dict, state: dict) -> None:
+    """Hold the reconstructed world on screen before handing off to attempts."""
+    section("Your workspace, reconstructed", "Tracked silhouettes become a metric physics scene")
+    source, world = st.columns([1, 1.5], gap="large")
+    build = state.get("stages", {}).get("build", {})
+    build_elapsed = build.get("duration_s") or 0
+    build_duration = state.get("stage_durations", {}).get("build") or 1
+    show_footprints = build.get("status") == "running" and build_elapsed < build_duration / 2
+    with source:
+        st.markdown('<div class="media-title">The captured workspace</div>', unsafe_allow_html=True)
+        show_image(media_file(run, media, "original_frame"), "Recorded workspace frame", height=400)
+        st.caption("Original working frame · recorded video evidence")
+    with world:
+        st.markdown(
+            '<div class="media-title">'
+            + ("Metric footprints" if show_footprints else "The generated physics world")
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+        if show_footprints:
+            show_image(media_file(run, media, "observed_footprints"), "Saved metric footprints", height=400)
+            st.caption("Saved masks projected onto the calibrated support plane")
+        elif media_file(run, media, "scene_orbit"):
+            show_video(
+                media_file(run, media, "scene_orbit"),
+                "Reconstructed scene · estimated shapes and physics",
+                placement="world-reveal-orbit",
+            )
+        else:
+            show_image(media_file(run, media, "scene_upright"), "Reconstructed scene", height=400)
+    st.markdown(
+        '<div class="story-handoff"><span>Annotations locked</span><span>Physics world ready</span>'
+        '<span>Next: recorded grasp attempts</span></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_replay(run: Path, report: dict, media: dict, presentation: dict, events: list[dict]) -> None:
     context = presentation_context(presentation, media)
+    preview = attempt_manifest(run)
+    context["attempt_preview"] = bool(preview)
+    context["attempt_count"] = preview.get("count", 0)
     times = event_seconds(events)
     declared_duration = presentation.get("replay_duration_s", 75.0)
     if not isinstance(declared_duration, (int, float)) or not 0 < declared_duration <= 300:
@@ -290,8 +361,10 @@ def render_replay(run: Path, report: dict, media: dict, presentation: dict, even
     position = min(replay_position(), duration)
     state = project_state(events, position)
     state["replay_complete"] = position >= duration
+    state["attempt_preview"] = bool(preview)
     offsets = {"Result" if report.get("held_out") else "Summary": duration}
-    chapter_stages = {"track": "Masks", "scale": "Scale", "build": "Physics", "tune": "Tuning"}
+    loop_chapter = "Grasp loop" if preview else "Tuning"
+    chapter_stages = {"track": "Masks", "scale": "Scale", "build": "Physics", "tune": loop_chapter}
     round_times = []
     stage_starts = {}
     stage_durations = {}
@@ -313,7 +386,7 @@ def render_replay(run: Path, report: dict, media: dict, presentation: dict, even
         offsets["Tuning"] = round_times[max(0, len(round_times) - 2)] + 0.1
     selected_clip = media.get("assets", {}).get("selected_planner_replay", {})
     if selected_clip.get("status") == "ready" and "Physics" in offsets:
-        offsets["Robot hand"] = min(offsets["Physics"] + 2, duration)
+        offsets["Robot hand"] = offsets.get(loop_chapter, min(offsets["Physics"] + 2, duration))
     st.session_state.chapter_offsets = offsets
     state["stage_durations"] = stage_durations
     cost = state.get("cost_usd") or {}
@@ -360,7 +433,7 @@ def render_replay(run: Path, report: dict, media: dict, presentation: dict, even
             st.rerun()
     st.pills(
         "Review a recorded chapter",
-        [chapter for chapter in ["Masks", "Scale", "Physics", "Robot hand", "Tuning", "Result", "Summary"] if chapter in offsets],
+        [chapter for chapter in ["Masks", "Scale", "Physics", "Robot hand", "Grasp loop", "Tuning", "Result", "Summary"] if chapter in offsets],
         key="replay_chapter",
         on_change=chapter_changed,
         label_visibility="collapsed",
@@ -381,22 +454,35 @@ def render_replay(run: Path, report: dict, media: dict, presentation: dict, even
             "Video-derived reconstruction. Robot-hand clips are illustrative simulator replays, "
             "not new evaluation results. The sealed held-out test has not run."
         )
-    if state.get("final"):
-        render_final(run, report, state, context)
-        with st.expander("Revisit the improvement loop"):
+    stages = state.get("stages", {})
+    phase = (
+        "result" if state.get("final") else
+        "attempts" if preview and stages.get("tune", {}).get("status") != "pending" else
+        "tuning" if stages.get("tune", {}).get("status") != "pending" else
+        "world" if state.get("scene") or stages.get("build", {}).get("status") in {"running", "done"} else
+        "perception"
+    )
+    with st.container(key=f"story-{phase}"):
+        if phase == "result":
+            render_final(run, report, state, context)
+            with st.expander("Revisit the improvement loop"):
+                render_tuning(run, report, media, state, position, context)
+            with st.expander("Inspect the reconstructed scene"):
+                render_scene(run, report, media, state, position, context)
+        elif phase == "attempts":
+            render_attempt_preview(run, report, media, state, position, context)
+            with st.expander("Inspect the source and annotations"):
+                render_scene(run, report, media, state, position, context)
+        elif phase == "tuning":
             render_tuning(run, report, media, state, position, context)
-        with st.expander("Inspect the reconstructed scene"):
+            with st.expander("Inspect the source and annotations"):
+                render_scene(run, report, media, state, position, context)
+            with st.expander("Failure autopsy"):
+                render_autopsy(run, media, state)
+        elif phase == "world":
+            render_world_reveal(run, media, state)
+        else:
             render_scene(run, report, media, state, position, context)
-    elif state.get("stages", {}).get("tune", {}).get("status") != "pending":
-        tabs = st.tabs(["Improvement loop", "Scene evidence", "Failure autopsy"])
-        with tabs[0]:
-            render_tuning(run, report, media, state, position, context)
-        with tabs[1]:
-            render_scene(run, report, media, state, position, context)
-        with tabs[2]:
-            render_autopsy(run, media, state)
-    else:
-        render_scene(run, report, media, state, position, context)
     model_legend()
     with st.expander("Review a moment"):
         st.slider(

@@ -78,3 +78,21 @@ Browser checks cover original upload, metadata-only remux upload, and rejection 
 Repeated appearances of one clip now have distinct accessible descriptions, avoiding Streamlit duplicate-element failures across tabs and paired players. Source, annotation, and hand panels use equal-height media surfaces. Scene events select cumulative masks, the reference outline, metric footprints, and the reconstructed scene before the hand clip appears. Chapter controls expose only available evidence, and changing videos returns to upload without restarting the server.
 
 Verification: 72 pytest cases passed; browser checks observed zero Streamlit exceptions, two rendered tuning charts, H.264 source/hand playback at readyState 4, the sealed-example result and downloads, and the legacy viewer. At a 390-pixel viewport the document width remained 390 pixels. Screenshots `18` through `24` capture restored upload, example tuning, actual-desk replay/masks/scale, finale, and responsive layout.
+
+## Episode-wall replay and staged handoff
+
+The episode wall from commit `64373f8` is shared by the original tuning cockpit and a separate actual-scene attempt preview. The presentation now advances through three stable, event-selected regions: annotations, generated world, and grasp attempts. Keyed Streamlit containers apply a single 700 ms reveal at each handoff; ordinary half-second event updates do not restart it. Reduced-motion preferences disable the decorative transition.
+
+To prepare missing actual-scene outcome tiles without API access:
+
+```sh
+uv run python scripts/export_attempt_preview.py --run-dir runs/<run> --count 128 --workers 4
+```
+
+This invokes the unchanged CPU simulator on public training-range seeds and fixed baseline parameters. Only `presentation/attempt_preview/manifest.json` and its separate `events.jsonl` are written. Source scene/family/parameter hashes invalidate stale previews; the viewer ignores mismatched inputs. No report, improvement history, seal, or held-out result is generated or replaced. This is not newly learned behavior or a final benchmark.
+
+The restored private desk presentation contains 128 recorded illustrative attempts (40 success, 88 failure). They fill fixed gray slots with green/red outcomes during the replay. The seed-0 hand video is a separate illustration, not synchronized footage of every tile. A second export returned the cached result without repeating simulations.
+
+Browser evidence: the wall grew from 33 resolved / 95 pending slots to all 128 resolved, with the same 40/88 outcome counts, zero Streamlit exceptions, and playing hand/orbit videos. The attempt-region entrance fired once while the wall continued updating. Screenshots `25` through `27` show the world handoff, partial wall, and complete wall. The full regression run passed 74 cases before the additional sample-provenance guard; all three updated preview boundary/cache tests then passed.
+
+Responsive check: all 128 tiles remained present at a 390-pixel viewport with no horizontal overflow or Streamlit exceptions. Chromium's reduced-motion emulation matched the preference and disabled the idle animation.

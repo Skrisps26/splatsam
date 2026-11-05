@@ -193,6 +193,150 @@ def section(title, detail=""):
     )
 
 
+def render_episode_wall(episodes: list[dict], *, planned_count: int, aria_label: str) -> dict:
+    """Render a fixed grid of saved episode outcomes and return its displayed counts."""
+    latest = {}
+    for index, episode in enumerate(episodes):
+        seed = episode.get("seed")
+        # Saved episode records normally have a seed. Preserve records without
+        # one rather than merging unrelated attempts into a single slot.
+        key = (
+            ("seed", seed)
+            if isinstance(seed, (str, int, float)) and not isinstance(seed, bool)
+            else ("event", index)
+        )
+        latest[key] = episode
+    displayed = list(latest.values())[:planned_count]
+    successes = sum(episode.get("success") is True for episode in displayed)
+    failures = sum(episode.get("success") is False for episode in displayed)
+    failure_modes = {}
+    squares = []
+    for episode in displayed:
+        if episode.get("success") is True:
+            status, outcome = "success", "success"
+        elif episode.get("success") is False:
+            status = "failure"
+            failure_mode = episode.get("failure_mode")
+            outcome = str(failure_mode or "failure label not recorded")
+            if isinstance(failure_mode, str) and failure_mode:
+                failure_modes[failure_mode] = failure_modes.get(failure_mode, 0) + 1
+        else:
+            status, outcome = "pending", "outcome not recorded"
+        label = f"Seed {episode.get('seed', 'not recorded')}: {outcome}"
+        squares.append(
+            f'<span class="episode-cell {status}" title="{html.escape(label, quote=True)}"></span>'
+        )
+    pending = max(planned_count - len(displayed), 0)
+    squares.extend(
+        '<span class="episode-cell pending" title="Awaiting a recorded episode"></span>'
+        for _ in range(pending)
+    )
+    st.markdown(
+        f'<div class="episode-wall" role="img" aria-label="{html.escape(aria_label, quote=True)}">'
+        + "".join(squares)
+        + (
+            f'</div><div class="wall-legend"><span><i style="background:#58cfa8"></i>Success</span>'
+            f'<span><i style="background:#df778c"></i>Failure</span>'
+            f'<span><i style="background:#223047"></i>Pending</span>'
+            f"<span>{planned_count} scenario slots</span></div>"
+        ),
+        unsafe_allow_html=True,
+    )
+    return {
+        "recorded": len(displayed),
+        "successes": successes,
+        "failures": failures,
+        "pending": pending,
+        "planned": planned_count,
+        "failure_modes": failure_modes,
+    }
+
+
+def planned_attempt_count(context: dict) -> int:
+    """Read the exported attempt count without deriving a replacement metric."""
+    count = number(context.get("attempt_count"))
+    return int(count) if count is not None and count.is_integer() and count > 0 else 64
+
+
+def render_attempt_preview(
+    run: Path,
+    report: dict,
+    media: dict,
+    state: dict,
+    position: float,
+    context: dict,
+):
+    """Show exported recorded preview attempts without deriving evaluation results."""
+    del report, position
+    preview_episodes = []
+    for value in items(state.get("episodes")):
+        episode = mapping(value)
+        if episode.get("phase") == "preview" and episode.get("preview_only") is True:
+            preview_episodes.append(episode)
+
+    with st.container(key="attempt-preview"):
+        section("Recorded attempt replay", "Fixed default planner · recorded simulation attempts")
+        left, right = st.columns([1.05, 1], gap="large")
+        replay_asset = mapping(mapping(media.get("assets")).get("selected_planner_replay"))
+        replay_path = (
+            media_file(run, media, "selected_planner_replay")
+            if replay_asset.get("status", "ready") == "ready"
+            else None
+        )
+        with left:
+            st.markdown('<div class="media-title">Robot-hand replay</div>', unsafe_allow_html=True)
+            show_video(
+                replay_path,
+                "Seed 0 playback · squares replay separate saved scenario outcomes",
+                placement="attempt-preview-hand",
+            )
+            wall = render_episode_wall(
+                preview_episodes,
+                planned_count=planned_attempt_count(context),
+                aria_label="Recorded preview attempt outcome grid",
+            )
+            st.caption(
+                "Fixed default planner · recorded simulation attempts · not parameter tuning or evaluation."
+            )
+        with right:
+            st.markdown(
+                '<div class="media-title">Saved reconstructed scene</div>',
+                unsafe_allow_html=True,
+            )
+            show_image(
+                media_file(run, media, "scene_upright"),
+                "Saved reconstructed physics scene",
+                height=270,
+            )
+            st.markdown('<div class="media-title">Saved scene orbit</div>', unsafe_allow_html=True)
+            show_video(
+                media_file(run, media, "scene_orbit"),
+                "Saved reconstructed-scene orbit · recorded presentation media",
+                placement="attempt-preview-orbit",
+            )
+            st.markdown(
+                (
+                    '<div class="metrics"><div class="metric"><span>Recorded attempts</span>'
+                    f'<strong>{wall["recorded"]} / {wall["planned"]}</strong>'
+                    '<em class="neutral">Saved events revealed</em></div>'
+                    '<div class="metric"><span>Successes</span>'
+                    f'<strong>{wall["successes"]}</strong>'
+                    '<em class="neutral">Recorded outcomes</em></div>'
+                    '<div class="metric"><span>Failures</span>'
+                    f'<strong>{wall["failures"]}</strong>'
+                    '<em class="neutral">Recorded outcomes</em></div></div>'
+                ),
+                unsafe_allow_html=True,
+            )
+            failure_modes = wall["failure_modes"]
+            if failure_modes:
+                breakdown = " · ".join(
+                    f"{FAILURES.get(mode, mode)} {count}"
+                    for mode, count in failure_modes.items()
+                )
+                st.caption(f"Recorded failure labels: {breakdown}.")
+
+
 def plot_style(fig, *, height=250):
     fig.update_layout(
         template="plotly_dark",
@@ -247,27 +391,11 @@ def render_tuning(run: Path, report: dict, media: dict, state: dict, position: f
             st.info("No saved demonstration clip is available for the recorded tuning evidence.")
         episodes = [mapping(e) for e in items(state.get("episodes")) if e.get("phase") == "tune"]
         section("Episode wall", "Saved evaluations, revealed as events arrive")
-        latest = {}
-        for episode in episodes:
-            latest[episode.get("seed")] = episode
-        display = list(latest.values())[:200]
-        slot_count = len(display)
-        squares = []
-        for episode in display:
-            status = "success" if episode.get("success") else "failure"
-            label = f"Seed {episode.get('seed')}: {'success' if episode.get('success') else episode.get('failure_mode')}"
-            squares.append(
-                f'<span class="episode-cell {status}" title="{html.escape(label, quote=True)}"></span>'
-            )
-        if squares:
-            st.markdown(
-                '<div class="episode-wall" role="img" aria-label="Recorded episode outcome grid">'
-                + "".join(squares)
-                + f'</div><div class="wall-legend"><span><i style="background:#58cfa8"></i>Success</span><span><i style="background:#df778c"></i>Failure</span><span>{slot_count} recorded scenario slots</span></div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.info("Recorded episode outcomes have not arrived in this replay.")
+        render_episode_wall(
+            episodes,
+            planned_count=200,
+            aria_label="Recorded tuning episode outcome grid",
+        )
         st.caption(
             "Cached evaluations; planner-variant/round association was not recorded. The wall is not a new success-rate estimate."
         )
@@ -506,7 +634,11 @@ def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: flo
     if stage == "track" and persisted_masks:
         current = min(int(track_fraction * len(persisted_masks)), len(persisted_masks) - 1)
         persisted_masks = [persisted_masks[current]]
-    source, annotation, replay = st.columns([1, 1, 1.05], gap="large")
+    scene_ready = bool(state.get("scene"))
+    if scene_ready:
+        source, annotation, replay = st.columns([1, 1, 1.05], gap="large")
+    else:
+        source, annotation = st.columns(2, gap="large")
     with source:
         st.markdown('<div class="media-title">Recorded source</div>', unsafe_allow_html=True)
         if source_video:
@@ -526,12 +658,15 @@ def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: flo
             st.caption("Persistent mask reveals begin with the recorded tracking stage.")
         else:
             show_annotation(source_frame, [])
-    with replay:
-        st.markdown('<div class="media-title">Robot-hand playback</div>', unsafe_allow_html=True)
-        if state.get("scene"):
+    if scene_ready:
+        with replay:
+            st.markdown('<div class="media-title">Robot-hand playback</div>', unsafe_allow_html=True)
             replay_asset = mapping(mapping(media.get("assets")).get("selected_planner_replay"))
             replay_label = str(
-                replay_asset.get("caption", replay_asset.get("provenance", "Saved robot-hand simulation replay"))
+                replay_asset.get(
+                    "caption",
+                    replay_asset.get("provenance", "Saved robot-hand simulation replay"),
+                )
             )
             replay_path = (
                 media_file(run, media, "selected_planner_replay")
@@ -542,11 +677,6 @@ def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: flo
                 replay_path,
                 f"{replay_label} · illustrative playback only; not a real robot or held-out evaluation",
                 placement="scene-robot-replay",
-            )
-        else:
-            st.markdown(
-                '<div class="empty-state">Robot-hand playback appears with the saved physics scene.</div>',
-                unsafe_allow_html=True,
             )
 
     details, scale_detail = st.columns([1.8, 1], gap="large")

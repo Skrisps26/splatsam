@@ -16,4 +16,8 @@ video[data-testid="stVideo"],[data-testid="stVideo"] video{height:400px;max-heig
 @media(max-width:800px){video[data-testid="stVideo"],[data-testid="stVideo"] video{height:320px;max-height:320px}}
 @keyframes breathe{0%,100%{opacity:1}50%{opacity:.55}}@keyframes orbit{to{transform:rotate(360deg)}}@keyframes reveal{from{filter:blur(3px);clip-path:inset(0 0 4% 0)}to{filter:blur(0);clip-path:inset(0)}}
 @media(max-width:800px){.block-container{padding:1rem 1rem 2rem}.hero{padding:.5rem 0 1rem}.hero h1{font-size:3.6rem!important}.topbar{margin-bottom:1rem}.topbar-right{gap:.7rem}.stepper{grid-template-columns:repeat(4,1fr)}.step{min-height:80px}.metrics{gap:.4rem}.metric{padding:.7rem}.metric strong{font-size:1.2rem}.episode-wall{grid-template-columns:repeat(20,1fr);gap:3px}.section-head{align-items:flex-start}.section-head h2{font-size:1.3rem!important}.annotation-frame{height:320px}}
+[class*="st-key-story-"]{animation:story-enter .7s cubic-bezier(.16,1,.3,1) both}
+@keyframes story-enter{from{opacity:.25;filter:blur(5px);clip-path:inset(0 0 6% 0)}to{opacity:1;filter:blur(0);clip-path:inset(0)}}
+.story-handoff{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;padding:1rem 0;color:#c5baff;border-top:1px solid #2b354d;font-size:.8rem}
+.episode-cell.pending{background:#263447;outline:1px solid #36465d;outline-offset:-1px}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
