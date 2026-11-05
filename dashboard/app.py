@@ -223,7 +223,7 @@ def render_upload(sample_run: Path, records: list[RecordedRun]) -> str | None:
             label_visibility="collapsed",
             key="workspace_upload",
             on_change=upload_changed,
-            help="MP4/H.264 recommended. The viewer only compares local bytes and never starts a pipeline.",
+            help="The viewer recognizes saved footage, including metadata-only MP4 changes. It does not start API calls.",
         )
         left, right = st.columns([1, 1])
         with left:
@@ -257,15 +257,11 @@ def render_upload(sample_run: Path, records: list[RecordedRun]) -> str | None:
             return None
 
         upload_bytes = uploaded.getvalue()
-        match = match_uploaded_video(records, sha256_bytes(upload_bytes))
+        match = match_uploaded_video(records, sha256_bytes(upload_bytes), upload_bytes=upload_bytes)
         st.video(upload_bytes, muted=True, width=360)
-        target_run = (
-            match.path
-            if match is not None and match.has_presentation_events
-            else (records[0].path if records and records[0].has_presentation_events else (sample_run if bool(events_for(sample_run)) else None))
-        )
+        target_run = match.path if match is not None and match.has_presentation_events else None
         if target_run is not None:
-            st.success("Workspace video recognized. Reconstructed physics sandbox ready.")
+            st.success("Matching workspace found. Its recorded reconstruction is ready.")
             st.button(
                 "Build my robot sandbox",
                 type="primary",
@@ -274,6 +270,10 @@ def render_upload(sample_run: Path, records: list[RecordedRun]) -> str | None:
                 args=(str(target_run),),
             )
             return "live"
+        st.info(
+            "No completed reconstruction matches this footage yet. Your video preview is available; "
+            "the bundled example is a separate replay, never this upload's result."
+        )
         st.button("Build my robot sandbox", type="primary", disabled=True, width="stretch")
         return None
 
@@ -281,10 +281,13 @@ def render_upload(sample_run: Path, records: list[RecordedRun]) -> str | None:
 def render_replay(run: Path, report: dict, media: dict, presentation: dict, events: list[dict]) -> None:
     context = presentation_context(presentation, media)
     times = event_seconds(events)
-    duration = max(times) if times else 75.0
+    declared_duration = presentation.get("replay_duration_s", 75.0)
+    if not isinstance(declared_duration, (int, float)) or not 0 < declared_duration <= 300:
+        declared_duration = 75.0
+    duration = max(max(times, default=0.0), float(declared_duration))
     position = min(replay_position(), duration)
     state = project_state(events, position)
-    offsets = {"Result": duration}
+    offsets = {"Result" if report.get("held_out") else "Summary": duration}
     chapter_stages = {"track": "Masks", "scale": "Scale", "build": "Physics", "tune": "Tuning"}
     round_times = []
     stage_starts = {}
@@ -305,6 +308,9 @@ def render_replay(run: Path, report: dict, media: dict, presentation: dict, even
             round_times.append(timestamp)
     if round_times:
         offsets["Tuning"] = round_times[max(0, len(round_times) - 2)] + 0.1
+    selected_clip = media.get("assets", {}).get("selected_planner_replay", {})
+    if selected_clip.get("status") == "ready" and "Physics" in offsets:
+        offsets["Robot hand"] = min(offsets["Physics"] + 2, duration)
     st.session_state.chapter_offsets = offsets
     state["stage_durations"] = stage_durations
     cost = state.get("cost_usd") or {}
@@ -318,10 +324,10 @@ def render_replay(run: Path, report: dict, media: dict, presentation: dict, even
         f"USD {recorded_cost:.4f}" if isinstance(recorded_cost, (int, float)) else "reported at reveal"
     )
     st.markdown(
-        f'<div class="topbar"><span class="brand-small">SplatSAM</span><span class="replay-label">Replaying a recorded run</span><div class="topbar-right"><span>{html.escape(source_label(context))}</span><span>Recorded Meta: {cost_text}</span><span>{position:04.1f}s / {duration:.0f}s</span></div></div>',
+        f'<div class="topbar"><span class="brand-small">SplatSAM</span><span class="replay-label">Replaying a recorded run</span><div class="topbar-right"><span>{html.escape(run.name)}</span><span>{html.escape(source_label(context))}</span><span>Recorded Meta: {cost_text}</span><span>{position:04.1f}s / {duration:.0f}s</span></div></div>',
         unsafe_allow_html=True,
     )
-    controls = st.columns([1, 1, 3])
+    controls = st.columns([1, 1, 3, 1])
     with controls[0]:
         if position >= duration:
             st.button("Restart", on_click=start_replay, args=(str(run),), width="stretch")
@@ -343,9 +349,15 @@ def render_replay(run: Path, report: dict, media: dict, presentation: dict, even
         )
     with controls[2]:
         st.progress(min(position / max(duration, 1), 1.0))
+    with controls[3]:
+        if st.button("Change video", width="stretch"):
+            st.session_state.replay_started = False
+            st.session_state.replay_playing = False
+            st.session_state.sample_selected = False
+            st.rerun()
     st.pills(
         "Review a recorded chapter",
-        ["Masks", "Scale", "Physics", "Tuning", "Result"],
+        [chapter for chapter in ["Masks", "Scale", "Physics", "Robot hand", "Tuning", "Result", "Summary"] if chapter in offsets],
         key="replay_chapter",
         on_change=chapter_changed,
         label_visibility="collapsed",
@@ -362,8 +374,9 @@ def render_replay(run: Path, report: dict, media: dict, presentation: dict, even
         unsafe_allow_html=True,
     )
     if context.get("source_mode") == "live" and not state.get("final"):
-        st.info(
-            "Completed recorded reconstruction and available tuning evidence are shown below. The sealed held-out test is pending and has not run."
+        st.caption(
+            "Video-derived reconstruction. Robot-hand clips are illustrative simulator replays, "
+            "not new evaluation results. The sealed held-out test has not run."
         )
     if state.get("final"):
         render_final(run, report, state, context)
