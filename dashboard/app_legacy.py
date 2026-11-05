@@ -1,5 +1,5 @@
 # THESIS: laboratory evidence — source/simulation first, honest sealed metrics.
-# WORLD: native Streamlit with a restrained light palette and system font; no hero, cards, kicker, or icons.
+# WORLD: legacy evidence layout, sharing the product demo's dark native-control theme.
 # FORM: pinned Operate lab notebook (brief seed bbe0e52e), with paired evidence first.
 # This viewer is read-only: it never invokes models, GPU, or tests.
 from __future__ import annotations
@@ -400,12 +400,12 @@ def main() -> None:
     st.markdown(
         """
         <style>
-        :root { color-scheme: light; }
-        .stApp { background: #fbfaf7; color: #182126; }
+        :root { color-scheme: dark; }
+        .stApp { background: #080d18; color: #f1f5ff; }
         .block-container { max-width: 1440px; padding-top: 2rem; padding-bottom: 3rem; }
-        h1, h2, h3 { color: #142d36; letter-spacing: -0.025em; }
+        h1, h2, h3 { color: #e0e7fb; letter-spacing: -0.025em; }
         h1 { font-weight: 680; }
-        [data-testid="stSidebar"] { background: #f2f1eb; }
+        [data-testid="stSidebar"] { background: #101827; }
         [data-testid="stSidebar"] .stButton > button, .stDownloadButton > button { border-radius: 6px; }
         [data-testid="stDataFrame"] { width: 100%; }
         .synthetic-badge { display: inline-block; margin: .35rem 0 .9rem; padding: .22rem .5rem; border: 1px solid #9b6700; color: #5e3d00; background: #fff4d3; font-size: .78rem; font-weight: 650; letter-spacing: .02em; }

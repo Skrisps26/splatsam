@@ -25,7 +25,7 @@ def _parse_timestamp(value: object) -> datetime | None:
     if not isinstance(value, str):
         return None
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
     return parsed if parsed.tzinfo is not None else None
@@ -42,7 +42,10 @@ def _safe_payload(value: object, key: str | None = None) -> bool:
     if key is not None and (key == "path" or key.endswith("_path")):
         return value is None or _safe_relative_path(value)
     if isinstance(value, dict):
-        return all(isinstance(child_key, str) and _safe_payload(child, child_key) for child_key, child in value.items())
+        return all(
+            isinstance(child_key, str) and _safe_payload(child, child_key)
+            for child_key, child in value.items()
+        )
     if isinstance(value, list):
         return all(_safe_payload(child) for child in value)
     return value is None or isinstance(value, (str, int, float, bool))
@@ -100,10 +103,7 @@ def event_seconds(events: list[dict]) -> list[float]:
 
 def _empty_state() -> dict[str, Any]:
     return {
-        "stages": {
-            stage: {"status": "pending", "duration_s": None}
-            for stage in STAGE_KEYS
-        },
+        "stages": {stage: {"status": "pending", "duration_s": None} for stage in STAGE_KEYS},
         "objects": [],
         "rounds": [],
         "episodes": [],
@@ -152,7 +152,11 @@ def project_state(events: list[dict], elapsed_s: float) -> dict:
                 starts[stage] = event_second
         elif event_type == "stage_finished":
             stage = payload.get("stage")
-            if stage in state["stages"] and payload.get("available") is True and payload.get("status") == "done":
+            if (
+                stage in state["stages"]
+                and payload.get("available") is True
+                and payload.get("status") == "done"
+            ):
                 started = starts.get(stage, event_second)
                 state["stages"][stage] = {
                     "status": "done",
@@ -179,4 +183,4 @@ def project_state(events: list[dict], elapsed_s: float) -> dict:
     return state
 
 
-__all__ = ["load_events", "event_seconds", "project_state"]
+__all__ = ["event_seconds", "load_events", "project_state"]

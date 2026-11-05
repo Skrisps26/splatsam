@@ -20,9 +20,11 @@ import numpy as np
 from diskcache import Cache
 
 from splatsam import rendering
-from splatsam.llm.schemas import ScenarioSpec, SceneSpec
+from splatsam.curriculum.sampler import split_scenarios
+from splatsam.llm.schemas import ScenarioFamily, ScenarioSpec, SceneSpec
+from splatsam.planner.params import PlannerParams
 from splatsam.sim.scene import build_model
-from splatsam.utils import ROOT, load_json, save_json
+from splatsam.utils import ROOT, digest, load_json, save_json
 
 import mujoco  # isort: skip
 
@@ -58,7 +60,9 @@ def _label(image: np.ndarray, title: str, subtitle: str = "") -> np.ndarray:
     cv2.rectangle(output, (0, 0), (output.shape[1], 44), (12, 18, 29), -1)
     cv2.putText(output, title, (12, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (238, 243, 250), 1, cv2.LINE_AA)
     if subtitle:
-        cv2.putText(output, subtitle, (12, 37), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (172, 191, 211), 1, cv2.LINE_AA)
+        cv2.putText(
+            output, subtitle, (12, 37), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (172, 191, 211), 1, cv2.LINE_AA
+        )
     return output
 
 
@@ -74,6 +78,7 @@ def _write_video(path: Path, frames: list[np.ndarray]) -> None:
         macro_block_size=1,
         ffmpeg_params=["-movflags", "+faststart"],
     )
+
 
 def _frame_for_track(track: dict[str, Any], frame_index: int) -> dict[str, Any]:
     return min(track["frames"], key=lambda frame: abs(int(frame["frame_index"]) - frame_index))
@@ -108,12 +113,30 @@ def _overlay_sequence(
             raise ValueError(f"mask dimensions for {track['id']} do not match source frame")
         color = np.array(COLORS_BGR[index % len(COLORS_BGR)], dtype=np.uint8)
         overlay[mask] = (overlay[mask].astype(np.float32) * 0.44 + color * 0.56).astype(np.uint8)
-        x, y = (int(round(value)) for value in frame["centroid"])
+        x, y = (round(value) for value in frame["centroid"])
         caption = f"{track['name']}  |  {track['id']}"
-        cv2.putText(overlay, caption, (x + 8, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (255, 255, 255), 2, cv2.LINE_AA)
-        cv2.putText(overlay, caption, (x + 8, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.43, tuple(int(v) for v in color), 1, cv2.LINE_AA)
+        cv2.putText(
+            overlay, caption, (x + 8, y - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (255, 255, 255), 2, cv2.LINE_AA
+        )
+        cv2.putText(
+            overlay,
+            caption,
+            (x + 8, y - 8),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.43,
+            tuple(int(v) for v in color),
+            1,
+            cv2.LINE_AA,
+        )
         out = destination / f"mask_reveal_{index + 1:02d}_{track['id']}.png"
-        _write_image(out, _label(_resize(overlay), "Persistent mask tracks", f"Reveal {index + 1}/{len(tracks)} • {track['id']}"))
+        _write_image(
+            out,
+            _label(
+                _resize(overlay),
+                "Persistent mask tracks",
+                f"Reveal {index + 1}/{len(tracks)} • {track['id']}",
+            ),
+        )
         outputs.append(out)
     return outputs
 
@@ -136,7 +159,16 @@ def _reference_outline(
     bar_px = round(0.10 / meters_per_pixel)
     origin = (45, output.shape[0] - 52)
     cv2.line(output, origin, (origin[0] + bar_px, origin[1]), (255, 255, 255), 4, cv2.LINE_AA)
-    cv2.putText(output, "10 cm", (origin[0], origin[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(
+        output,
+        "10 cm",
+        (origin[0], origin[1] - 10),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.55,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
     return _label(
         _resize(output),
         "Reference outline • scale locked",
@@ -144,17 +176,17 @@ def _reference_outline(
     )
 
 
-def _footprints(
-    tracks: list[dict[str, Any]], frame_index: int, reference: dict[str, Any]
-) -> np.ndarray:
+def _footprints(tracks: list[dict[str, Any]], frame_index: int, reference: dict[str, Any]) -> np.ndarray:
     min_x, min_y, max_x, max_y = (float(value) for value in reference["bounds"])
     meters_per_pixel = float(reference["meters_per_pixel"])
-    width = max(1, int(math.ceil((max_x - min_x) / meters_per_pixel)))
-    height = max(1, int(math.ceil((max_y - min_y) / meters_per_pixel)))
+    width = max(1, math.ceil((max_x - min_x) / meters_per_pixel))
+    height = max(1, math.ceil((max_y - min_y) / meters_per_pixel))
     transform = np.array(
-        [[1.0 / meters_per_pixel, 0.0, -min_x / meters_per_pixel],
-         [0.0, 1.0 / meters_per_pixel, -min_y / meters_per_pixel],
-         [0.0, 0.0, 1.0]],
+        [
+            [1.0 / meters_per_pixel, 0.0, -min_x / meters_per_pixel],
+            [0.0, 1.0 / meters_per_pixel, -min_y / meters_per_pixel],
+            [0.0, 0.0, 1.0],
+        ],
         dtype=np.float64,
     ) @ np.asarray(reference["homography"], dtype=np.float64)
     canvas = np.full((height, width, 3), (22, 31, 42), dtype=np.uint8)
@@ -166,11 +198,17 @@ def _footprints(
         moments = cv2.moments(footprint)
         if moments["m00"]:
             center = (int(moments["m10"] / moments["m00"]), int(moments["m01"] / moments["m00"]))
-            cv2.putText(canvas, track["id"], center, cv2.FONT_HERSHEY_SIMPLEX, 0.38, (245, 248, 250), 1, cv2.LINE_AA)
+            cv2.putText(
+                canvas, track["id"], center, cv2.FONT_HERSHEY_SIMPLEX, 0.38, (245, 248, 250), 1, cv2.LINE_AA
+            )
     bar = round(0.10 / meters_per_pixel)
     cv2.line(canvas, (18, height - 20), (18 + bar, height - 20), (255, 255, 255), 3, cv2.LINE_AA)
-    cv2.putText(canvas, "10 cm", (18, height - 28), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1, cv2.LINE_AA)
-    return _label(_resize(canvas), "Bird's-eye observed footprints", "Warped saved masks on the locked reference raster")
+    cv2.putText(
+        canvas, "10 cm", (18, height - 28), cv2.FONT_HERSHEY_SIMPLEX, 0.35, (255, 255, 255), 1, cv2.LINE_AA
+    )
+    return _label(
+        _resize(canvas), "Bird's-eye observed footprints", "Warped saved masks on the locked reference raster"
+    )
 
 
 def _camera(azimuth: float, elevation: float, distance: float) -> mujoco.MjvCamera:
@@ -195,9 +233,15 @@ def _scene_media(scene: SceneSpec, scenario: ScenarioSpec) -> tuple[np.ndarray, 
         for azimuth in np.linspace(8, 368, 48, endpoint=False):
             renderer.update_scene(data, camera=_camera(float(azimuth), -27, 0.88))
             orbit_frames.append(
-                _label(renderer.render().copy(), "Reconstructed primitive scene", "Static SceneSpec render • no simulation steps")
+                _label(
+                    renderer.render().copy(),
+                    "Reconstructed primitive scene",
+                    "Static SceneSpec render • no simulation steps",
+                )
             )
-    return _label(still, "Reconstructed primitive scene", "Upright SceneSpec render • synthetic geometry"), orbit_frames
+    return _label(
+        still, "Reconstructed primitive scene", "Upright SceneSpec render • synthetic geometry"
+    ), orbit_frames
 
 
 def _recorded_replay(scene: SceneSpec, scenario: ScenarioSpec, replay: dict[str, Any]) -> list[np.ndarray]:
@@ -256,7 +300,110 @@ def _cached_pair(cache_dir: Path) -> tuple[dict[str, Any] | None, str]:
     return None, "no same-seed failure/success trace pair is present in the episode cache"
 
 
-def export(run_dir: Path, bundle: Path) -> dict[str, Any]:
+def _training_pair_from_cache(
+    cache_dir: Path, scene: SceneSpec, family: ScenarioFamily, baseline: PlannerParams, final: PlannerParams
+) -> tuple[ScenarioSpec | None, str]:
+    """Select only a cached train seed with a baseline failure and final success."""
+    if not cache_dir.exists():
+        return None, "episode cache is absent"
+    cache = Cache(str(cache_dir))
+    try:
+        for scenario in split_scenarios(family, scene, "train"):
+
+            def cached(params: PlannerParams, scenario=scenario) -> dict[str, Any] | None:
+                key = digest(
+                    {
+                        "scene": scene.model_dump(mode="json"),
+                        "scenario": scenario.model_dump(mode="json"),
+                        "params": params.to_dict(),
+                        "physics": "parallel-jaw-v1",
+                    }
+                )
+                result = cache.get(key)
+                return result if isinstance(result, dict) else None
+
+            baseline_result = cached(baseline)
+            final_result = cached(final)
+            if (
+                baseline_result
+                and final_result
+                and not baseline_result.get("success")
+                and final_result.get("success")
+            ):
+                return scenario, ""
+    finally:
+        cache.close()
+    return None, "no cached train seed has baseline failure and final success"
+
+
+def _export_training_pair(
+    destination: Path,
+    cache_dir: Path,
+    scene: SceneSpec,
+    family: ScenarioFamily,
+    baseline: PlannerParams,
+    final: PlannerParams,
+    rounds: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, str]:
+    """Opt-in only: make illustrative train-seed recordings outside reported metrics."""
+    scenario, reason = _training_pair_from_cache(cache_dir, scene, family, baseline, final)
+    if scenario is None:
+        return None, reason
+    # Import lazily so the default exporter cannot execute a physical episode.
+    from splatsam.sim.replay import save_replay
+
+    baseline_temp = destination / ".paired_baseline.tmp.mp4"
+    final_temp = destination / ".paired_final.tmp.mp4"
+    baseline_path = destination / "paired_training_baseline.mp4"
+    final_path = destination / "paired_training_final.mp4"
+    try:
+        baseline_result = save_replay(scene, scenario, baseline, baseline_temp)
+        final_result = save_replay(scene, scenario, final, final_temp)
+        if baseline_result.success or not final_result.success:
+            raise RuntimeError("new recording no longer matches selected cached baseline/final outcomes")
+        baseline_temp.replace(baseline_path)
+        final_temp.replace(final_path)
+    finally:
+        baseline_temp.unlink(missing_ok=True)
+        final_temp.unlink(missing_ok=True)
+
+    current = baseline
+    round_clips: dict[str, dict[str, Any]] = {}
+    for row in rounds:
+        if not row.get("accepted"):
+            continue
+        candidate = current.patch(row["patch"])
+        if candidate.hash != row["candidate_hash"]:
+            raise ValueError(f"round {row['round']} does not apply sequentially from the saved baseline")
+        temporary = destination / f".round_{row['round']}.tmp.mp4"
+        output = destination / f"paired_training_round_{row['round']}.mp4"
+        try:
+            result = save_replay(scene, scenario, candidate, temporary)
+            temporary.replace(output)
+        finally:
+            temporary.unlink(missing_ok=True)
+        round_clips[str(row["round"])] = {
+            "path": output,
+            "seed": scenario.seed,
+            "params_hash": candidate.hash,
+            "params": candidate.to_dict(),
+            "success": result.success,
+            "provenance": "New illustrative synthetic train-seed recording; excluded from report metrics and sealed evaluation.",
+        }
+        current = candidate
+    return {
+        "seed": scenario.seed,
+        "baseline": baseline_path,
+        "final": final_path,
+        "round_clips": round_clips,
+        "provenance": (
+            "New illustrative synthetic train-seed recordings selected from cached outcomes; "
+            "excluded from report metrics and sealed evaluation."
+        ),
+    }, ""
+
+
+def export(run_dir: Path, bundle: Path, *, paired_training_replay: bool = False) -> dict[str, Any]:
     if not (run_dir / "completed.json").is_file():
         raise ValueError("media export only accepts a completed run directory")
     report = load_json(run_dir / "report.json")
@@ -278,7 +425,12 @@ def export(run_dir: Path, bundle: Path) -> dict[str, Any]:
     shutil.copyfile(source_video, published_source_video)
 
     original = destination / "original_frame.png"
-    _write_image(original, _label(_resize(source), "Original synthetic input frame", f"Recorded frame {frame_index} • no live video"))
+    _write_image(
+        original,
+        _label(
+            _resize(source), "Original synthetic input frame", f"Recorded frame {frame_index} • no live video"
+        ),
+    )
     reveals = _overlay_sequence(source, tracks, frame_index, destination)
     paper = next(track for track in tracks if track["id"] == "paper")
     reference_path = destination / "reference_scale.png"
@@ -295,39 +447,158 @@ def export(run_dir: Path, bundle: Path) -> dict[str, Any]:
     if recorded_frames:
         _write_video(replay_path, recorded_frames)
 
-    pair, pair_reason = _cached_pair(run_dir / "episode_cache")
+    _cached_pair_value, cached_pair_reason = _cached_pair(run_dir / "episode_cache")
+    training_pair = None
+    training_pair_reason = ""
+    if paired_training_replay:
+        family = ScenarioFamily.model_validate(load_json(run_dir / "family.json"))
+        baseline = PlannerParams.load(run_dir / "baseline_params.json")
+        final = PlannerParams.load(run_dir / "final_params.json")
+        training_pair, training_pair_reason = _export_training_pair(
+            destination,
+            run_dir / "episode_cache",
+            scene,
+            family,
+            baseline,
+            final,
+            load_json(run_dir / "rounds.json"),
+        )
     missing = []
-    if pair is None:
-        missing.append({"asset": "paired_baseline_final", "reason": pair_reason})
+    if training_pair is None:
+        reason = training_pair_reason if paired_training_replay else cached_pair_reason
+        missing.append({"asset": "paired_baseline_final", "reason": reason})
     if not recorded_frames:
         missing.append({"asset": "recorded_final_replay", "reason": "replay_result.json has no qpos trace"})
 
     assets = {
-        "original_frame": {"path": _relative(original, bundle), "kind": "image", "provenance": "saved synthetic frame"},
-        "source_video": {"path": _relative(published_source_video, bundle), "kind": "video", "provenance": "unsegmented saved synthetic input video; copied without re-encoding"},
-        "mask_reveals": {"path": [_relative(path, bundle) for path in reveals], "kind": "image_sequence", "provenance": "saved persistent masks"},
-        "reference_scale": {"path": _relative(reference_path, bundle), "kind": "image", "provenance": "saved paper mask and locked synthetic A4 homography"},
-        "observed_footprints": {"path": _relative(footprint_path, bundle), "kind": "image", "provenance": "saved observed masks warped through saved homography"},
-        "scene_upright": {"path": _relative(scene_path, bundle), "kind": "image", "provenance": "SceneSpec renderer with mj_forward only"},
-        "scene_orbit": {"path": _relative(orbit_path, bundle), "kind": "video", "provenance": "SceneSpec renderer with mj_forward only"},
-        "sim_fallback": {"path": "sim.png", "kind": "image", "provenance": "existing bundled synthetic renderer fallback"},
-        "recorded_final_replay": {"path": _relative(replay_path, bundle), "kind": "video", "provenance": "saved seed-0 final qpos trace"} if recorded_frames else None,
-        "grasp_fallback": {"path": "grasp.mp4", "kind": "video", "provenance": "existing bundled replay fallback"},
+        "original_frame": {
+            "path": _relative(original, bundle),
+            "kind": "image",
+            "provenance": "saved synthetic frame",
+        },
+        "source_video": {
+            "path": _relative(published_source_video, bundle),
+            "kind": "video",
+            "provenance": "unsegmented saved synthetic input video; copied without re-encoding",
+        },
+        "mask_reveals": {
+            "path": [_relative(path, bundle) for path in reveals],
+            "kind": "image_sequence",
+            "provenance": "saved persistent masks",
+        },
+        "reference_scale": {
+            "path": _relative(reference_path, bundle),
+            "kind": "image",
+            "provenance": "saved paper mask and locked synthetic A4 homography",
+        },
+        "observed_footprints": {
+            "path": _relative(footprint_path, bundle),
+            "kind": "image",
+            "provenance": "saved observed masks warped through saved homography",
+        },
+        "scene_upright": {
+            "path": _relative(scene_path, bundle),
+            "kind": "image",
+            "provenance": "SceneSpec renderer with mj_forward only",
+        },
+        "scene_orbit": {
+            "path": _relative(orbit_path, bundle),
+            "kind": "video",
+            "provenance": "SceneSpec renderer with mj_forward only",
+        },
+        "sim_fallback": {
+            "path": "sim.png",
+            "kind": "image",
+            "provenance": "existing bundled synthetic renderer fallback",
+        },
+        "recorded_final_replay": {
+            "path": _relative(replay_path, bundle),
+            "kind": "video",
+            "provenance": "saved seed-0 final qpos trace",
+        }
+        if recorded_frames
+        else None,
+        "paired_training_baseline": {
+            "path": _relative(training_pair["baseline"], bundle),
+            "kind": "video",
+            "provenance": training_pair["provenance"],
+        }
+        if training_pair
+        else None,
+        "paired_training_final": {
+            "path": _relative(training_pair["final"], bundle),
+            "kind": "video",
+            "provenance": training_pair["provenance"],
+        }
+        if training_pair
+        else None,
+        "grasp_fallback": {
+            "path": "grasp.mp4",
+            "kind": "video",
+            "provenance": "existing bundled replay fallback",
+        },
     }
     assets = {name: asset for name, asset in assets.items() if asset is not None}
     reveal_frames = [
-        {"stage": "understand", "kind": "image", "path": _relative(original, bundle), "label": "Original synthetic input frame"},
+        {
+            "stage": "understand",
+            "kind": "image",
+            "path": _relative(original, bundle),
+            "label": "Original synthetic input frame",
+        },
         *[
-            {"stage": "track", "kind": "image", "path": _relative(path, bundle), "label": f"Persistent mask reveal {index + 1}: {tracks[index]['name']} ({tracks[index]['id']})"}
+            {
+                "stage": "track",
+                "kind": "image",
+                "path": _relative(path, bundle),
+                "label": f"Persistent mask reveal {index + 1}: {tracks[index]['name']} ({tracks[index]['id']})",
+            }
             for index, path in enumerate(reveals)
         ],
-        {"stage": "scale", "kind": "image", "path": _relative(reference_path, bundle), "label": "Synthetic A4 reference outline and locked scale"},
-        {"stage": "build", "kind": "image", "path": _relative(footprint_path, bundle), "label": "Bird's-eye observed footprints"},
-        {"stage": "build", "kind": "image", "path": _relative(scene_path, bundle), "label": "Upright reconstructed primitive scene"},
-        {"stage": "build", "kind": "video", "path": _relative(orbit_path, bundle), "label": "Static reconstructed-scene orbit"},
+        {
+            "stage": "scale",
+            "kind": "image",
+            "path": _relative(reference_path, bundle),
+            "label": "Synthetic A4 reference outline and locked scale",
+        },
+        {
+            "stage": "build",
+            "kind": "image",
+            "path": _relative(footprint_path, bundle),
+            "label": "Bird's-eye observed footprints",
+        },
+        {
+            "stage": "build",
+            "kind": "image",
+            "path": _relative(scene_path, bundle),
+            "label": "Upright reconstructed primitive scene",
+        },
+        {
+            "stage": "build",
+            "kind": "video",
+            "path": _relative(orbit_path, bundle),
+            "label": "Static reconstructed-scene orbit",
+        },
     ]
     if recorded_frames:
-        reveal_frames.append({"stage": "sealed", "kind": "video", "path": _relative(replay_path, bundle), "label": "Recorded final replay, seed 0"})
+        reveal_frames.append(
+            {
+                "stage": "sealed",
+                "kind": "video",
+                "path": _relative(replay_path, bundle),
+                "label": "Recorded final replay, seed 0",
+            }
+        )
+    if training_pair:
+        for number, clip in training_pair["round_clips"].items():
+            reveal_frames.append(
+                {
+                    "stage": "tune",
+                    "kind": "video",
+                    "path": _relative(clip["path"], bundle),
+                    "label": f"Illustrative training seed {clip['seed']} • accepted round {number}",
+                }
+            )
     manifest: dict[str, Any] = {
         "schema_version": 1,
         "mode": "synthetic",
@@ -342,14 +613,30 @@ def export(run_dir: Path, bundle: Path) -> dict[str, Any]:
         },
         "missing": missing,
     }
-    if pair is not None:
+    if training_pair:
         manifest["paired"] = {
-            "seed": pair["seed"],
-            "baseline": {"status": "recorded trace available"},
-            "final": {"status": "recorded trace available"},
+            "status": "available",
+            "seed": training_pair["seed"],
+            "baseline": {
+                "path": _relative(training_pair["baseline"], bundle),
+                "params_hash": PlannerParams.load(run_dir / "baseline_params.json").hash,
+            },
+            "final": {
+                "path": _relative(training_pair["final"], bundle),
+                "params_hash": PlannerParams.load(run_dir / "final_params.json").hash,
+            },
+            "provenance": training_pair["provenance"],
+        }
+        manifest["round_clips"] = {
+            number: {**clip, "path": _relative(clip["path"], bundle)}
+            for number, clip in training_pair["round_clips"].items()
         }
     else:
-        manifest["paired"] = {"status": "missing", "reason": pair_reason, "fallback": "grasp.mp4"}
+        manifest["paired"] = {
+            "status": "missing",
+            "reason": training_pair_reason if paired_training_replay else cached_pair_reason,
+            "fallback": "grasp.mp4",
+        }
     save_json(destination / "media.json", manifest)
     return manifest
 
@@ -358,8 +645,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", type=Path, default=ROOT / "runs" / "synth-demo")
     parser.add_argument("--bundle", type=Path, default=ROOT / "demo_data")
+    parser.add_argument(
+        "--paired-training-replay",
+        action="store_true",
+        help="opt in to new illustrative train-seed recordings; never used for report metrics or sealed evaluation",
+    )
     args = parser.parse_args()
-    manifest = export(args.run_dir.resolve(), args.bundle.resolve())
+    manifest = export(
+        args.run_dir.resolve(), args.bundle.resolve(), paired_training_replay=args.paired_training_replay
+    )
     print(f"Exported {len(manifest['assets'])} presentation asset groups to {args.bundle / 'presentation'}")
 
 

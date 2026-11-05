@@ -1,0 +1,7 @@
+{
+  "source": "saved synthetic pilot",
+  "benchmark_n": 100,
+  "wall_seconds": 9.721672503001173,
+  "episodes_per_second": 10.286295899098539,
+  "not_replay_throughput": true
+}

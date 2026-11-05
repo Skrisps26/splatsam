@@ -10,7 +10,7 @@ import io
 import json
 import pickle
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +33,7 @@ STAGE_SCHEDULE = {
     "tune": (21.5, 53.0),
     "sealed": (53.5, 75.0),
 }
-PRESENTATION_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+PRESENTATION_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _safe_relative(path: str) -> bool:
@@ -275,8 +275,6 @@ def _llm_events(root: Path) -> list[dict[str, Any]]:
     return events
 
 
-
-
 def _tune_episode_events(root: Path) -> list[dict[str, Any]]:
     outcomes = _cached_outcomes(root)
     events: list[dict[str, Any]] = []
@@ -318,7 +316,11 @@ def _final_events(root: Path) -> list[dict[str, Any]]:
     seal_hash = final_test.get("seal_hash")
     if isinstance(comparison, dict) and isinstance(seal_hash, str):
         report = _load_json(root, "report.json")
-        costs = report.get("costs") if isinstance(report, dict) and isinstance(report.get("costs"), dict) else None
+        costs = (
+            report.get("costs")
+            if isinstance(report, dict) and isinstance(report.get("costs"), dict)
+            else None
+        )
         payload: dict[str, Any] = {
             "comparison": copy.deepcopy(comparison),
             "seal_hash": seal_hash,

@@ -22,12 +22,17 @@ ROOT = HERE.parent
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
+from panels import model_legend, render_autopsy, render_final, render_scene, render_tuning
 from replay_data import event_seconds, load_events, project_state
 
 STAGES = {
-    "understand": "Understand scene", "track": "Track objects · sam-3.1",
-    "scale": "Measure scale · reference", "build": "Build physics world",
-    "scenarios": "Generate scenarios", "tune": "Automatic tuning", "sealed": "Sealed test",
+    "understand": "Understand scene",
+    "track": "Track objects · sam-3.1",
+    "scale": "Measure scale · A4 sheet",
+    "build": "Build physics world",
+    "scenarios": "Generate scenarios",
+    "tune": "Automatic tuning",
+    "sealed": "Sealed test",
 }
 
 
@@ -40,7 +45,9 @@ def skin(modified: int) -> str:
         path = HERE / "assets" / name
         if path.exists():
             encoded = base64.b64encode(path.read_bytes()).decode()
-            fonts.append(f"@font-face{{font-family:Manrope;src:url(data:font/ttf;base64,{encoded}) format('truetype');font-weight:{weight};font-display:swap}}")
+            fonts.append(
+                f"@font-face{{font-family:Manrope;src:url(data:font/ttf;base64,{encoded}) format('truetype');font-weight:{weight};font-display:swap}}"
+            )
     return "<style>" + "".join(fonts) + css + "</style>"
 
 
@@ -84,7 +91,9 @@ def asset(run: Path, relative: str | None) -> Path | None:
 def replay_position() -> float:
     offset = float(st.session_state.get("replay_offset", 0))
     if st.session_state.get("replay_playing", False):
-        offset += (time.monotonic() - st.session_state.get("replay_anchor", time.monotonic())) * st.session_state.get("replay_speed", 1.0)
+        offset += (
+            time.monotonic() - st.session_state.get("replay_anchor", time.monotonic())
+        ) * st.session_state.get("replay_speed", 1.0)
     return max(0.0, offset)
 
 
@@ -117,6 +126,15 @@ def seek_changed() -> None:
     st.session_state.replay_playing = False
 
 
+def chapter_changed() -> None:
+    chapter = st.session_state.get("replay_chapter")
+    offsets = st.session_state.get("chapter_offsets", {})
+    if chapter in offsets:
+        st.session_state.replay_offset = offsets[chapter]
+        st.session_state.replay_anchor = time.monotonic()
+        st.session_state.replay_playing = False
+
+
 def render_stepper(state: dict) -> None:
     cells = []
     for index, (key, label) in enumerate(STAGES.items(), 1):
@@ -125,19 +143,31 @@ def render_stepper(state: dict) -> None:
         duration = item.get("duration_s")
         text = f"{duration:.1f}s in replay" if isinstance(duration, (int, float)) else "Waiting for event"
         icon = "✓" if status == "done" else str(index)
-        cells.append(f'<div class="step {status}"><span class="step-dot">{icon}</span><strong>{html.escape(label)}</strong><small>{text}</small></div>')
-    st.markdown('<div class="stepper" aria-label="Pipeline stages">' + "".join(cells) + '</div>', unsafe_allow_html=True)
+        cells.append(
+            f'<div class="step {status}"><span class="step-dot">{icon}</span><strong>{html.escape(label)}</strong><small>{text}</small></div>'
+        )
+    st.markdown(
+        '<div class="stepper" aria-label="Pipeline stages">' + "".join(cells) + "</div>",
+        unsafe_allow_html=True,
+    )
+
 
 def upload_changed() -> None:
     st.session_state.sample_selected = False
-
 
 
 def render_upload(run: Path, media: dict) -> None:
     with st.container(border=True):
         st.subheader("Start with a workspace")
         st.caption("Drop in a phone video, or explore a complete recorded sandbox.")
-        uploaded = st.file_uploader("Workspace video", type=["mp4"], label_visibility="collapsed", key="workspace_upload", on_change=upload_changed, help="MP4/H.264 recommended. Uploads stay local and are never sent to a model by this replay-only viewer.")
+        uploaded = st.file_uploader(
+            "Workspace video",
+            type=["mp4"],
+            label_visibility="collapsed",
+            key="workspace_upload",
+            on_change=upload_changed,
+            help="MP4/H.264 recommended. Uploads stay local and are never sent to a model by this replay-only viewer.",
+        )
         left, right = st.columns([1, 1])
         with left:
             if st.button("Use sample video", use_container_width=True):
@@ -146,7 +176,9 @@ def render_upload(run: Path, media: dict) -> None:
             st.caption("12 seconds · six objects · A4 scale reference")
         if uploaded is not None and not st.session_state.get("sample_selected"):
             st.video(uploaded.getvalue(), muted=True, width=360)
-            st.info("This upload is local only. Live execution is paused; its results are not replaced by the recorded sample.")
+            st.info(
+                "This upload is local only. Live execution is paused; its results are not replaced by the recorded sample."
+            )
             if st.button("Save upload for a later live run"):
                 digest = hashlib.sha256(uploaded.getbuffer()).hexdigest()
                 destination = ROOT / "data/videos" / f"upload_{digest[:12]}.mp4"
@@ -154,12 +186,20 @@ def render_upload(run: Path, media: dict) -> None:
                 destination.write_bytes(uploaded.getbuffer())
                 st.success(f"Saved privately as {destination.name}. No inference started.")
             st.button("Build my robot sandbox", type="primary", disabled=True, use_container_width=True)
-            st.caption("Choose Use sample video to launch the replay. Live launch is hidden rather than bypassing privacy, calibration or sealed-test approvals.")
+            st.caption(
+                "Choose Use sample video to launch the replay. Live launch is hidden rather than bypassing privacy, calibration or sealed-test approvals."
+            )
         else:
             source = asset(run, "presentation/source.mp4")
             if st.session_state.get("sample_selected") and source:
                 st.video(str(source), muted=True, width=360, alt="Unsegmented synthetic workspace input")
-            st.button("Build my robot sandbox", type="primary", use_container_width=True, on_click=start_replay, disabled=not bool(events_for(run)))
+            st.button(
+                "Build my robot sandbox",
+                type="primary",
+                use_container_width=True,
+                on_click=start_replay,
+                disabled=not bool(events_for(run)),
+            )
             st.caption("Starts a recorded synthetic replay—not a new API or GPU run.")
 
 
@@ -168,34 +208,108 @@ def render_replay(run: Path, report: dict, media: dict, events: list[dict]) -> N
     duration = max(times) if times else 75.0
     position = min(replay_position(), duration)
     state = project_state(events, position)
+    offsets = {"Result": duration}
+    chapter_stages = {"track": "Masks", "scale": "Scale", "build": "Physics", "tune": "Tuning"}
+    round_times = []
+    for event, timestamp in zip(events, times, strict=True):
+        if event.get("type") == "stage_started":
+            chapter = chapter_stages.get(event.get("payload", {}).get("stage"))
+            if chapter:
+                offsets[chapter] = min(timestamp + 2, duration)
+        elif event.get("type") == "round_finished":
+            round_times.append(timestamp)
+    if round_times:
+        offsets["Tuning"] = round_times[max(0, len(round_times) - 2)] + 0.1
+    st.session_state.chapter_offsets = offsets
     cost = state.get("cost_usd") or {}
     recorded_cost = cost.get("meta_usd")
-    cost_text = f"USD {recorded_cost:.4f}" if isinstance(recorded_cost, (int, float)) else "reported at reveal"
-    st.markdown(f'<div class="topbar"><span class="replay-label">Replaying a recorded run</span><div class="topbar-right"><span>{html.escape(run.name)}</span><span>Recorded Meta: {cost_text}</span><span>{position:04.1f}s / {duration:.0f}s</span></div></div>', unsafe_allow_html=True)
+    if recorded_cost is None and state.get("llm_calls"):
+        try:
+            recorded_cost = sum(float(call.get("cost_usd", 0)) for call in state["llm_calls"])
+        except (TypeError, ValueError):
+            recorded_cost = None
+    cost_text = (
+        f"USD {recorded_cost:.4f}" if isinstance(recorded_cost, (int, float)) else "reported at reveal"
+    )
+    st.markdown(
+        f'<div class="topbar"><span class="brand-small">SplatSAM</span><span class="replay-label">Replaying a recorded run</span><div class="topbar-right"><span>{html.escape(run.name)}</span><span>Recorded Meta: {cost_text}</span><span>{position:04.1f}s / {duration:.0f}s</span></div></div>',
+        unsafe_allow_html=True,
+    )
     controls = st.columns([1, 1, 3])
     with controls[0]:
-        st.button("Pause" if st.session_state.get("replay_playing") else "Resume", on_click=pause_or_resume, use_container_width=True)
+        if position >= duration:
+            st.button("Restart", on_click=start_replay, use_container_width=True)
+        else:
+            st.button(
+                "Pause" if st.session_state.get("replay_playing") else "Resume",
+                on_click=pause_or_resume,
+                use_container_width=True,
+            )
     with controls[1]:
-        st.selectbox("Replay speed", [0.5, 1.0, 2.0, 4.0], index=1, key="speed_control", on_change=speed_changed, format_func=lambda n: f"{n:g}×", label_visibility="collapsed")
+        st.selectbox(
+            "Replay speed",
+            [0.5, 1.0, 2.0, 4.0],
+            index=1,
+            key="speed_control",
+            on_change=speed_changed,
+            format_func=lambda n: f"{n:g}×",
+            label_visibility="collapsed",
+        )
     with controls[2]:
-        st.progress(min(position / max(duration, 1), 1.0), text=state.get("caption") or "Waiting for the next recorded event")
+        st.progress(min(position / max(duration, 1), 1.0))
+    st.pills(
+        "Review a recorded chapter",
+        ["Masks", "Scale", "Physics", "Tuning", "Result"],
+        key="replay_chapter",
+        on_change=chapter_changed,
+        label_visibility="collapsed",
+    )
     render_stepper(state)
-    st.caption("Synthetic recorded run. Event timing is presentation-paced from saved snapshots; stage durations are replay durations, not measured pipeline runtime. Model responses in this sample are mocks.")
-    st.markdown('<div class="live-caption"><span class="live-dot"></span>' + html.escape(state.get("caption") or "Ready to reveal the workspace") + '</div>', unsafe_allow_html=True)
-    preview = asset(run, "presentation/scene_upright.png") if state.get("scene") else asset(run, "presentation/original_frame.png")
-    if preview:
-        st.image(str(preview), use_container_width=True)
+    st.caption(
+        "Synthetic sample · mocked model responses · presentation-paced event timeline, not measured pipeline runtime."
+    )
+    st.markdown(
+        '<div class="live-caption"><span class="live-dot"></span>'
+        + html.escape(state.get("caption") or "Ready to reveal the workspace")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+    if state.get("final"):
+        render_final(run, report, state)
+        with st.expander("Revisit the improvement loop"):
+            render_tuning(run, report, media, state, position)
+        with st.expander("Inspect the reconstructed scene"):
+            render_scene(run, report, media, state, position)
+    elif state.get("stages", {}).get("tune", {}).get("status") != "pending":
+        tabs = st.tabs(["Improvement loop", "Scene evidence", "Failure autopsy"])
+        with tabs[0]:
+            render_tuning(run, report, media, state, position)
+        with tabs[1]:
+            render_scene(run, report, media, state, position)
+        with tabs[2]:
+            render_autopsy(run, media, state)
     else:
-        st.markdown('<div class="idle-visual" aria-label="Waiting for recorded artifacts"><div class="orbit"></div></div>', unsafe_allow_html=True)
+        render_scene(run, report, media, state, position)
+    model_legend()
     with st.expander("Review a moment"):
-        st.slider("Seek in the recorded timeline (pauses playback)", 0, int(duration), 0, key="seek_control", on_change=seek_changed)
+        st.slider(
+            "Seek in the recorded timeline (pauses playback)",
+            0,
+            int(duration),
+            0,
+            key="seek_control",
+            on_change=seek_changed,
+        )
     if position >= duration:
+        st.session_state.replay_offset = duration
         st.session_state.replay_playing = False
         st.button("Watch it again", on_click=start_replay, type="primary")
 
 
 def main() -> None:
-    st.set_page_config(page_title="SplatSAM · Robot sandbox", layout="wide", initial_sidebar_state="collapsed")
+    st.set_page_config(
+        page_title="SplatSAM · Robot sandbox", layout="wide", initial_sidebar_state="collapsed"
+    )
     st.markdown(skin((HERE / "styles.css").stat().st_mtime_ns), unsafe_allow_html=True)
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--run-dir", default="demo_data")
@@ -206,20 +320,27 @@ def main() -> None:
     media = read_json(run / "presentation/media.json")
     events = events_for(run)
     started = st.session_state.get("replay_started", False)
-    st.markdown('<div class="topbar"><span class="brand-small">SplatSAM</span><div class="topbar-right"><span class="mode-pill">REPLAY</span><span>Recorded synthetic workspace</span><span>No API key or GPU needed</span></div></div>', unsafe_allow_html=True)
     if not started:
+        st.markdown(
+            '<div class="topbar"><span class="brand-small">SplatSAM</span><div class="topbar-right"><span class="mode-pill">REPLAY</span><span>Recorded synthetic workspace</span><span>No API key or GPU needed</span></div></div>',
+            unsafe_allow_html=True,
+        )
         left, right = st.columns([1.15, 1], gap="large")
         with left:
-            st.markdown('<div class="hero"><h1>SplatSAM</h1><p>Phone video in.<br>Physics sandbox out.</p><p class="hero-detail">A robot that gets measurably better—in this recorded synthetic experiment. Rule-based planning, transparent tuning, and an honest final test.</p></div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="hero"><h1>SplatSAM</h1><p>Phone video in.<br>Physics sandbox out.</p><p class="hero-detail">A robot that gets measurably better—in this recorded synthetic experiment. Rule-based planning, transparent tuning, and an honest final test.</p></div>',
+                unsafe_allow_html=True,
+            )
         with right:
             preview = asset(run, "presentation/scene_upright.png") or asset(run, "sim.png")
             if preview:
                 st.image(str(preview), use_container_width=True)
         render_upload(run, media)
     else:
-        st.markdown('<div class="hero compact"><h1>SplatSAM</h1><p>Your workspace, becoming a physics sandbox.</p></div>', unsafe_allow_html=True)
         if not events:
-            st.warning("This run has no presentation event log. Choose the bundled sample or run scripts/export_ui_events.py on an existing artifact directory.")
+            st.warning(
+                "This run has no presentation event log. Choose the bundled sample or run scripts/export_ui_events.py on an existing artifact directory."
+            )
             return
 
         @st.fragment(run_every=0.5)
@@ -227,7 +348,10 @@ def main() -> None:
             render_replay(run, report, media, events)
 
         replay_fragment()
-    st.markdown('<div class="limits-strip">Simulation only. Rule-based grasp planner, tuned by model proposals. Floating gripper, no arm. Shapes are estimated from video. Test set sealed until the end. The bundled experiment uses synthetic inputs and mocked model responses.</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="limits-strip">Simulation only. Rule-based grasp planner, tuned by model proposals. Floating gripper, no arm. Shapes are estimated from video. Test set sealed until the end. The bundled experiment uses synthetic inputs and mocked model responses.</div>',
+        unsafe_allow_html=True,
+    )
 
 
 if __name__ == "__main__":
