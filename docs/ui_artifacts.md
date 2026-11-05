@@ -15,7 +15,7 @@ The dashboard is a **presentation-only reader**. Native files remain the source 
 | `runs/<run>/presentation.json`, `runs/<run>/events.jsonl` | Private live replay manifest and paced events | Snapshot-derived replay metadata and append-only events. They do not represent measured pipeline timing. |
 | `runs/demo/` | `make demo` runtime copy | Complete cached synthetic bundle used by the local viewer; no inference or evaluation runs while it is made or viewed. |
 
-For an uploaded MP4, the dashboard hashes the uploaded bytes and considers only a discovered live `input.json` with the same SHA-256 **and** a still-verifiable private local source video. A match with no event log remains unavailable. An unmatched upload remains its own preview or private saved input; the UI **never** opens cached synthetic evidence as that upload's result.
+For an uploaded MP4, the dashboard tries exact SHA-256 first. If the container or encoding changed, it compares decoded duration and 12 normalized frame samples against still-verifiable private sources using OpenCV. This is a conservative footage lookup, not identity authentication. Blocked runs, sample provenance, and non-live scenes are excluded. An unrelated upload remains a preview; the UI never opens another run as its result.
 
 ## Media and visual evidence
 
@@ -66,3 +66,15 @@ uv run python scripts/export_real_ui.py --run-dir runs/<run> --record-grasp --se
 Without `--record-grasp`, the real exporter produces only static saved-artifact media. With it, `--seed` (default `0`, valid `0..9999`) selects an illustrative scenario from the saved frozen `family.json`, saved live `scene.json`, and `final_params.json`, and writes H.264 faststart `presentation/selected_planner_replay.mp4`. That clip is marked `excluded_from_evaluation=true`; it is not a final-test run or a result. If the saved family or parameters are unavailable, export records missing media metadata and never substitutes synthetic media.
 
 The exporter verifies a live `input.json`, its source digest, and the local private video before copying media; it calls no model and never runs a final evaluation. Outputs stay under the ignored `runs/<run>/presentation/` directory plus that run's `presentation.json` and `events.jsonl`. No raw actual video is copied into `demo_data/` or made public.
+
+## Desk presentation recovery
+
+The private `runs/desk-restored/` presentation was rebuilt from the authorized desk video and saved real SAM tracks. The missing laptop reference was recovered with an operator-selected source-frame box passed through the existing SAM client; its masks are model predictions. The user-identified yellow ball retains its original track ID with a documented semantic correction. Existing homography, primitive reconstruction, consistency fitting, and rendering functions were reused unchanged.
+
+The hand animation is a newly rendered, illustrative default-planner episode on that actual reconstructed scene. It is excluded from evaluation. Lost real tuning history and held-out results were not replaced with sample metrics; the actual-scene report has no completed held-out result. The independently labeled bundled example retains its original complete benchmark.
+
+Browser checks cover original upload, metadata-only remux upload, and rejection of unrelated footage. Playback remains explicitly labeled “Replaying a recorded run.” Streamlit fragments, native video players, and the existing Plotly charts remain the UI building blocks; no new component dependencies were added. Reference: [Streamlit fragment documentation](https://docs.streamlit.io/develop/api-reference/execution-flow/st.fragment).
+
+Repeated appearances of one clip now have distinct accessible descriptions, avoiding Streamlit duplicate-element failures across tabs and paired players. Source, annotation, and hand panels use equal-height media surfaces. Scene events select cumulative masks, the reference outline, metric footprints, and the reconstructed scene before the hand clip appears. Chapter controls expose only available evidence, and changing videos returns to upload without restarting the server.
+
+Verification: 72 pytest cases passed; browser checks observed zero Streamlit exceptions, two rendered tuning charts, H.264 source/hand playback at readyState 4, the sealed-example result and downloads, and the legacy viewer. At a 390-pixel viewport the document width remained 390 pixels. Screenshots `18` through `24` capture restored upload, example tuning, actual-desk replay/masks/scale, finale, and responsive layout.

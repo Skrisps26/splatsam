@@ -198,7 +198,9 @@ def render_stepper(state: dict) -> None:
         item = state.get("stages", {}).get(key, {})
         status = item.get("status", "pending")
         duration = item.get("duration_s")
-        text = f"{duration:.1f}s in replay" if isinstance(duration, (int, float)) else "Waiting for event"
+        text = f"{duration:.1f}s in replay" if isinstance(duration, (int, float)) else (
+            "Not recorded" if state.get("replay_complete") else "Waiting for event"
+        )
         icon = "✓" if status == "done" else str(index)
         cells.append(
             f'<div class="step {status}"><span class="step-dot">{icon}</span><strong>{html.escape(label)}</strong><small>{text}</small></div>'
@@ -287,6 +289,7 @@ def render_replay(run: Path, report: dict, media: dict, presentation: dict, even
     duration = max(max(times, default=0.0), float(declared_duration))
     position = min(replay_position(), duration)
     state = project_state(events, position)
+    state["replay_complete"] = position >= duration
     offsets = {"Result" if report.get("held_out") else "Summary": duration}
     chapter_stages = {"track": "Masks", "scale": "Scale", "build": "Physics", "tune": "Tuning"}
     round_times = []

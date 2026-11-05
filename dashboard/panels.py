@@ -54,7 +54,20 @@ def file(run: Path, relative) -> Path | None:
 
 def media_file(run: Path, media: dict, key: str, fallback: str | None = None) -> Path | None:
     entry = mapping(mapping(media.get("assets")).get(key))
-    return file(run, entry.get("path")) or file(run, fallback)
+    # A declared asset that is absent must stay absent. Falling through to an
+    # unlisted similarly named file can silently change its provenance.
+    if entry:
+        return file(run, entry.get("path"))
+    return file(run, fallback)
+
+
+def media_files(run: Path, media: dict, key: str) -> list[Path]:
+    """Resolve a declared media sequence without guessing at sibling assets."""
+    entry = mapping(mapping(media.get("assets")).get(key))
+    paths = entry.get("path")
+    if isinstance(paths, str):
+        paths = [paths]
+    return [resolved for path in items(paths) if (resolved := file(run, path))]
 
 
 @st.cache_data(show_spinner=False)
@@ -66,6 +79,48 @@ def image_uri(path: str, modified: int) -> str:
         return f"data:{mime};base64," + base64.b64encode(data).decode()
     except OSError:
         return ""
+
+
+@st.cache_data(show_spinner=False)
+def saved_track_previews(
+    run_path: str, tracks_modified: int, frame_fraction: float
+) -> list[tuple[str, str]]:
+    """Return one saved mask from each track at the requested replay position."""
+    del tracks_modified
+    run = Path(run_path)
+    try:
+        tracks = json.loads((run / "tracks.json").read_text(encoding="utf-8"))
+        masks = (run / "masks").resolve()
+    except (OSError, ValueError):
+        return []
+    previews = []
+    for track in items(tracks):
+        frames = items(mapping(track).get("frames"))
+        if not frames:
+            continue
+        index = min(round(frame_fraction * (len(frames) - 1)), len(frames) - 1)
+        path = mapping(frames[index]).get("mask_path")
+        if not isinstance(path, str):
+            continue
+        try:
+            candidate = Path(path).resolve()
+        except OSError:
+            continue
+        if candidate.is_relative_to(masks) and candidate.is_file():
+            name = mapping(track).get("name") or mapping(track).get("id") or "tracked object"
+            previews.append((str(candidate), str(name)))
+    return previews
+
+
+def track_previews(run: Path, frame_fraction: float) -> list[tuple[Path, str]]:
+    tracks = run / "tracks.json"
+    try:
+        paths = saved_track_previews(
+            str(run.resolve()), tracks.stat().st_mtime_ns, min(max(frame_fraction, 0.0), 1.0)
+        )
+    except OSError:
+        return []
+    return [(Path(path), name) for path, name in paths]
 
 
 def show_image(path: Path | None, label: str, height=390):
@@ -82,13 +137,51 @@ def show_image(path: Path | None, label: str, height=390):
         )
 
 
-def show_video(path: Path | None, label: str):
+def show_annotation(source: Path | None, masks: list[tuple[Path, str]]) -> None:
+    source_uri = image_uri(str(source), source.stat().st_mtime_ns) if source else ""
+    mask_uris = [
+        (image_uri(str(path), path.stat().st_mtime_ns), name) for path, name in masks
+    ]
+    mask_uris = [(uri, name) for uri, name in mask_uris if uri]
+    if not source_uri:
+        st.markdown(
+            '<div class="empty-state">The declared working frame is unavailable, so its saved annotation cannot be overlaid.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    if mask_uris:
+        label = (
+            f"Saved persistent mask · {mask_uris[0][1]}"
+            if len(mask_uris) == 1
+            else f"Saved persistent masks · {len(mask_uris)} tracked objects"
+        )
+        overlays = "".join(
+            f'<img class="annotation-mask" src="{uri}" alt="">'
+            for uri, _ in mask_uris
+        )
+        st.markdown(
+            f'<div class="annotation-frame reveal-frame"><img class="annotation-source" src="{source_uri}" alt="Saved source working frame">{overlays}<span class="annotation-tag">{html.escape(label)}</span></div>',
+            unsafe_allow_html=True,
+        )
+        st.caption("Saved source working frame with persisted tracking masks; the overlay is not a new inference.")
+    else:
+        st.markdown(
+            f'<div class="annotation-frame reveal-frame"><img class="annotation-source" src="{source_uri}" alt="Saved source working frame"><span class="annotation-tag">No stable saved mask</span></div>',
+            unsafe_allow_html=True,
+        )
+        st.caption("The saved working frame is available, but no persisted tracking mask was exported.")
+
+
+def show_video(path: Path | None, label: str, *, placement: str):
     if path:
-        st.video(str(path), autoplay=True, loop=True, muted=True, alt=label)
+        # st.video has no explicit key. Its accessible description participates
+        # in Streamlit's element identity, so keep one stable description per
+        # placement when a recorded clip is reused in the same render.
+        st.video(str(path), autoplay=True, loop=True, muted=True, alt=f"{label} · {placement}")
         st.caption(label)
     else:
         st.markdown(
-            '<div class="empty-state">No recorded clip is available for this planner yet.</div>',
+            '<div class="empty-state">This declared recorded video is unavailable in the current bundle.</div>',
             unsafe_allow_html=True,
         )
 
@@ -149,7 +242,7 @@ def render_tuning(run: Path, report: dict, media: dict, state: dict, position: f
             clip = file(run, mapping(paired.get("baseline")).get("path"))
             label = f"{clip_source.capitalize()} · baseline scenario {paired.get('seed', '—')}"
         if clip:
-            show_video(clip, label)
+            show_video(clip, label, placement="tuning-primary")
         else:
             st.info("No saved demonstration clip is available for the recorded tuning evidence.")
         episodes = [mapping(e) for e in items(state.get("episodes")) if e.get("phase") == "tune"]
@@ -287,11 +380,13 @@ def render_tuning(run: Path, report: dict, media: dict, state: dict, position: f
                 show_video(
                     file(run, mapping(paired.get("baseline")).get("path")),
                     f"Baseline · seed {paired.get('seed')} · failed",
+                    placement="paired-baseline",
                 )
             with b:
                 show_video(
                     file(run, mapping(paired.get("final")).get("path")),
                     f"Selected planner · seed {paired.get('seed')} · succeeded",
+                    placement="paired-final",
                 )
             st.caption(
                 paired.get(
@@ -366,9 +461,9 @@ def comparison_slider(before: Path | None, after: Path | None):
 
 
 def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: float, context: dict):
+    del elapsed
     section("A scene takes shape", "Recorded frames → masks → metric footprints → physics")
     stages = mapping(state.get("stages"))
-    frames = [mapping(x) for x in items(media.get("reveal_frames"))]
     stage = next(
         (
             key
@@ -377,28 +472,85 @@ def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: flo
         ),
         "build" if state.get("scene") else "understand",
     )
-    candidates = [f for f in frames if f.get("stage") == stage and f.get("kind") == "image"]
+    source_video = media_file(run, media, "source_video")
+    source_frame = media_file(run, media, "original_frame")
+    mask_reveals = media_files(run, media, "mask_reveals")
+    track_fraction = 1.0
     if stage == "track":
-        track_elapsed = number(mapping(stages.get("track")).get("duration_s")) or 0
-        track_total = number(mapping(state.get("stage_durations")).get("track")) or 1
-        count = 1 + int(track_elapsed / max(track_total, 0.001) * len(candidates))
-        selected = candidates[min(max(count - 1, 0), len(candidates) - 1)] if candidates else {}
-    elif stage == "build" and candidates:
-        duration = number(mapping(stages.get("build")).get("duration_s")) or 0
-        selected = candidates[-1] if duration > 2 or state.get("scene") else candidates[0]
-    elif stage == "scenarios":
-        selected = next((f for f in frames if f.get("path") == "presentation/scene_upright.png"), {})
-    else:
-        selected = candidates[-1] if candidates else next(iter(frames), {})
-    left, right = st.columns([1.8, 1], gap="large")
-    with left:
-        show_image(
-            file(run, selected.get("path")) or media_file(run, media, "original_frame", "source.png"),
-            selected.get("label", "Recorded workspace"),
-            height=400,
+        elapsed_track = number(mapping(stages.get("track")).get("duration_s")) or 0
+        total_track = number(mapping(state.get("stage_durations")).get("track")) or 1
+        track_fraction = min(elapsed_track / max(total_track, 0.001), 1.0)
+    persisted_masks = track_previews(run, track_fraction) if stage != "understand" else []
+    track_labels = [
+        frame.get("label", "Saved persistent mask reveal")
+        for frame in (mapping(frame) for frame in items(media.get("reveal_frames")))
+        if frame.get("stage") == "track"
+    ]
+    annotation_path = None
+    annotation_label = ""
+    if stage != "understand" and mask_reveals:
+        index = min(int(track_fraction * len(mask_reveals)), len(mask_reveals) - 1) if stage == "track" else len(mask_reveals) - 1
+        annotation_path = mask_reveals[index]
+        annotation_label = (
+            str(track_labels[index]) if index < len(track_labels) else "Saved persistent mask reveal"
         )
-        st.caption(selected.get("label", "Recorded workspace frame"))
-    with right:
+    if stage == "scale":
+        annotation_path = media_file(run, media, "reference_scale")
+        annotation_label = "Saved reference outline and metric scale"
+    elif stage == "build" and mapping(stages.get("build")).get("status") == "running":
+        build_elapsed = number(mapping(stages.get("build")).get("duration_s")) or 0
+        build_total = number(mapping(state.get("stage_durations")).get("build")) or 1
+        reveal_key = "observed_footprints" if build_elapsed < build_total / 2 else "scene_upright"
+        annotation_path = media_file(run, media, reveal_key)
+        annotation_label = "Metric footprints" if reveal_key == "observed_footprints" else "Reconstructed physics scene"
+    if stage == "track" and persisted_masks:
+        current = min(int(track_fraction * len(persisted_masks)), len(persisted_masks) - 1)
+        persisted_masks = [persisted_masks[current]]
+    source, annotation, replay = st.columns([1, 1, 1.05], gap="large")
+    with source:
+        st.markdown('<div class="media-title">Recorded source</div>', unsafe_allow_html=True)
+        if source_video:
+            show_video(source_video, "Declared source video", placement="scene-source")
+        else:
+            show_image(source_frame, "Saved source working frame", height=400)
+            st.caption("Declared source video unavailable; showing its separately declared saved working frame.")
+    with annotation:
+        st.markdown('<div class="media-title">Saved annotations</div>', unsafe_allow_html=True)
+        if annotation_path:
+            show_image(annotation_path, annotation_label, height=400)
+            st.caption(f"{annotation_label}. Recorded evidence; no inference runs in the viewer.")
+        elif persisted_masks:
+            show_annotation(source_frame, persisted_masks)
+        elif mask_reveals:
+            show_image(source_frame, "Saved source working frame", height=400)
+            st.caption("Persistent mask reveals begin with the recorded tracking stage.")
+        else:
+            show_annotation(source_frame, [])
+    with replay:
+        st.markdown('<div class="media-title">Robot-hand playback</div>', unsafe_allow_html=True)
+        if state.get("scene"):
+            replay_asset = mapping(mapping(media.get("assets")).get("selected_planner_replay"))
+            replay_label = str(
+                replay_asset.get("caption", replay_asset.get("provenance", "Saved robot-hand simulation replay"))
+            )
+            replay_path = (
+                media_file(run, media, "selected_planner_replay")
+                if replay_asset.get("status", "ready") == "ready"
+                else None
+            )
+            show_video(
+                replay_path,
+                f"{replay_label} · illustrative playback only; not a real robot or held-out evaluation",
+                placement="scene-robot-replay",
+            )
+        else:
+            st.markdown(
+                '<div class="empty-state">Robot-hand playback appears with the saved physics scene.</div>',
+                unsafe_allow_html=True,
+            )
+
+    details, scale_detail = st.columns([1.8, 1], gap="large")
+    with details:
         detected = items(state.get("objects"))
         st.subheader(f"{len(detected)} objects understood")
         for obj in detected:
@@ -411,6 +563,7 @@ def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: flo
                 '<div class="idle-visual" aria-label="Waiting for object events"><div class="orbit"></div></div>',
                 unsafe_allow_html=True,
             )
+    with scale_detail:
         scale = mapping(stages.get("scale"))
         reference = mapping(context.get("reference"))
         reference_name = reference.get("name")
@@ -424,17 +577,20 @@ def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: flo
                 else "Metric scale comes from the saved reference. Heights and physics remain estimates."
             )
             st.caption(detail)
+        else:
+            st.caption("A saved metric reference will be shown when the scale stage is available.")
+
     if state.get("scene"):
-        orbit = media_file(run, media, "scene_orbit", "presentation/scene_orbit.mp4")
-        scene_source = (
-            "Recorded reconstruction" if context.get("source_mode") == "live" else "Saved recorded example"
-        )
-        if orbit and 22 <= elapsed <= 32:
-            show_video(orbit, f"{scene_source} · rendered orbit of the saved physics scene")
+        with st.expander("Open saved physics-scene orbit"):
+            show_video(
+                media_file(run, media, "scene_orbit"),
+                "Saved camera orbit of the reconstructed physics scene",
+                placement="scene-orbit",
+            )
         with st.expander("Compare input and simulation"):
             comparison_slider(
-                media_file(run, media, "original_frame", "source.png"),
-                media_file(run, media, "scene_upright", "sim.png"),
+                media_file(run, media, "original_frame"),
+                media_file(run, media, "scene_upright"),
             )
         with st.expander("Object estimates and visual consistency", expanded=stage == "scenarios"):
             rows = []
@@ -579,6 +735,7 @@ def render_autopsy(run: Path, media: dict, state: dict):
             show_video(
                 file(run, mapping(pair.get("baseline")).get("path")),
                 "Illustrative baseline clip for this seed; the selected cached planner variant was not recorded",
+                placement="autopsy-baseline",
             )
         else:
             st.info(
