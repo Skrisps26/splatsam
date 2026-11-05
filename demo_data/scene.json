@@ -1,1 +1,144 @@
-{"objects":[{"consistency_iou":0.9905044323164769,"friction":0.5,"friction_source":"estimate","graspable":false,"height_source":"estimate","id":"paper","mass":0.050471199999999994,"mass_source":"estimate","material":"paper","mesh_path":null,"name":"white reference sheet","position":[-0.1634999890178442,-0.18749998432025314,0.0005],"reconstruction_source":"primitive;clutter_dimension_gate","rgba":[0.6826061493025519,0.8170588235294117,0.3915474048442907,1.0],"schema_version":1,"shape":"box","size":[0.299,0.211,0.001],"yaw":-1.5707963267948966},{"consistency_iou":0.966553436111837,"friction":0.5,"friction_source":"estimate","graspable":true,"height_source":"estimate","id":"remote_1","mass":0.19988565483076529,"mass_source":"estimate","material":"plastic","mesh_path":null,"name":"plastic remote","position":[-0.22363499115407465,0.2650554356016219,0.0125],"reconstruction_source":"primitive","rgba":[0.3705520953479431,0.8474509803921568,0.7471170902098201,1.0],"schema_version":1,"shape":"box","size":[0.16260316467285157,0.046829910278320314,0.025],"yaw":0.15074612275565835},{"consistency_iou":0.9572903225806452,"friction":0.5,"friction_source":"estimate","graspable":true,"height_source":"estimate","id":"remote_2","mass":0.2022122707084854,"mass_source":"estimate","material":"plastic","mesh_path":null,"name":"plastic remote","position":[0.22381769897043702,0.2869598545469344,0.0125],"reconstruction_source":"primitive","rgba":[0.3002214532871973,0.4319744944852941,0.7023529411764706,1.0],"schema_version":1,"shape":"box","size":[0.16206526184082032,0.0475322380065918,0.025],"yaw":-0.3708915715633807},{"consistency_iou":0.9659090909090909,"friction":1.0,"friction_source":"estimate","graspable":true,"height_source":"estimate","id":"ball","mass":0.0737345162728751,"mass_source":"estimate","material":"rubber","mesh_path":null,"name":"rubber ball","position":[0.2555000109821558,-0.10599998432025312,0.025199766327024985],"reconstruction_source":"primitive","rgba":[0.6572549019607843,0.3265654748173779,0.4981065784118488,1.0],"schema_version":1,"shape":"sphere","size":[0.05039953265404997,0.05039953265404997,0.05039953265404997],"yaw":0.08726646259971647},{"consistency_iou":0.9013854930725347,"friction":0.5,"friction_source":"estimate","graspable":true,"height_source":"estimate","id":"marker_1","mass":0.0339504452964933,"mass_source":"estimate","material":"plastic","mesh_path":null,"name":"plastic marker","position":[-0.17479636047780514,0.05917289775982498,0.008515625],"reconstruction_source":"primitive","rgba":[0.4220421105853781,0.7150980392156863,0.3093149557862361,1.0],"schema_version":1,"shape":"horizontal_cylinder","size":[0.1419296875,0.01703125,0.01703125],"yaw":-0.34407924441821125},{"consistency_iou":0.9130966952264382,"friction":0.5,"friction_source":"estimate","graspable":true,"height_source":"estimate","id":"marker_2","mass":0.03483351852343298,"mass_source":"estimate","material":"plastic","mesh_path":null,"name":"plastic marker","position":[0.08756803466379642,0.055572250787168764,0.008650348663330079],"reconstruction_source":"primitive","rgba":[0.8180392156862745,0.3634660515186467,0.7912098547396134,1.0],"schema_version":1,"shape":"horizontal_cylinder","size":[0.1411207733154297,0.017300697326660158,0.017300697326660158],"yaw":0.5493745299381683}],"reference_validation":{"aspect_ratio_error":0.0002644009480050613,"paper_area_error":0.0013078562927505422,"scene_origin_x":0.2684993539005518,"scene_origin_y":0.33670205110684037},"scale_error":0.002507040529839729,"scale_source":"paper_homography","schema_version":1,"seed":42,"source":"synthetic","table_size":[1.0,1.0]}
+{
+  "objects": [
+    {
+      "id": "reference:1",
+      "name": "closed laptop",
+      "shape": "box",
+      "size": [
+        0.357,
+        0.255,
+        0.0235
+      ],
+      "position": [
+        0.1,
+        0.1,
+        0.02
+      ],
+      "yaw": 0.0,
+      "graspable": false,
+      "color": [
+        0.8,
+        0.2,
+        0.2,
+        1.0
+      ],
+      "mass": 0.15,
+      "friction": 0.6
+    },
+    {
+      "id": "remote_control:0",
+      "name": "black remote control",
+      "shape": "box",
+      "size": [
+        0.179,
+        0.0498,
+        0.018
+      ],
+      "position": [
+        0.1,
+        0.1,
+        0.02
+      ],
+      "yaw": 0.0,
+      "graspable": true,
+      "color": [
+        0.8,
+        0.2,
+        0.2,
+        1.0
+      ],
+      "mass": 0.15,
+      "friction": 0.6
+    },
+    {
+      "id": "remote_control:1",
+      "name": "black remote control",
+      "shape": "box",
+      "size": [
+        0.216,
+        0.0509,
+        0.018
+      ],
+      "position": [
+        0.1,
+        0.1,
+        0.02
+      ],
+      "yaw": 0.0,
+      "graspable": true,
+      "color": [
+        0.8,
+        0.2,
+        0.2,
+        1.0
+      ],
+      "mass": 0.15,
+      "friction": 0.6
+    },
+    {
+      "id": "ballpoint_pen:0",
+      "name": "blue ballpoint pen",
+      "shape": "horizontal_cylinder",
+      "size": [
+        0.147,
+        0.0139,
+        0.0139
+      ],
+      "position": [
+        0.1,
+        0.1,
+        0.02
+      ],
+      "yaw": 0.0,
+      "graspable": true,
+      "color": [
+        0.8,
+        0.2,
+        0.2,
+        1.0
+      ],
+      "mass": 0.15,
+      "friction": 0.6
+    },
+    {
+      "id": "lemon:0",
+      "name": "yellow ball",
+      "shape": "sphere",
+      "size": [
+        0.0744,
+        0.0744,
+        0.0744
+      ],
+      "position": [
+        0.1,
+        0.1,
+        0.02
+      ],
+      "yaw": 0.0,
+      "graspable": true,
+      "color": [
+        0.8,
+        0.2,
+        0.2,
+        1.0
+      ],
+      "mass": 0.15,
+      "friction": 0.6
+    }
+  ],
+  "reference_validation": {
+    "aspect_ratio_error": 0.0002644009480050613,
+    "paper_area_error": 0.0013078562927505422,
+    "scene_origin_x": 0.2684993539005518,
+    "scene_origin_y": 0.33670205110684037
+  },
+  "scale_error": 0.002507040529839729,
+  "scale_source": "paper_homography",
+  "schema_version": 1,
+  "seed": 42,
+  "source": "live",
+  "table_size": [
+    1.0,
+    1.0
+  ]
+}

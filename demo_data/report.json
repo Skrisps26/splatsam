@@ -64,106 +64,74 @@
   "mode": "live",
   "objects": [
     {
-      "consistency_iou": 0.9905044323164769,
-      "friction": 0.5,
-      "friction_source": "estimate",
-      "height_source": "estimate",
-      "id": "paper",
-      "mass_kg": 0.050471199999999994,
-      "mass_source": "estimate",
-      "name": "white reference sheet",
-      "reconstruction_source": "primitive;clutter_dimension_gate",
+      "id": "reference:1",
+      "name": "closed laptop",
       "shape": "box",
       "size_m": [
-        0.299,
-        0.211,
-        0.001
-      ]
+        0.357,
+        0.255,
+        0.0235
+      ],
+      "graspable": false,
+      "material": "plastic",
+      "material_guess": "plastic",
+      "consistency_iou": 0.965
     },
     {
-      "consistency_iou": 0.966553436111837,
-      "friction": 0.5,
-      "friction_source": "estimate",
-      "height_source": "estimate",
-      "id": "remote_1",
-      "mass_kg": 0.19988565483076529,
-      "mass_source": "estimate",
-      "name": "plastic remote",
-      "reconstruction_source": "primitive",
+      "id": "remote_control:0",
+      "name": "black remote control",
       "shape": "box",
       "size_m": [
-        0.16260316467285157,
-        0.046829910278320314,
-        0.025
-      ]
+        0.179,
+        0.0498,
+        0.018
+      ],
+      "graspable": true,
+      "material": "plastic",
+      "material_guess": "plastic",
+      "consistency_iou": 0.942
     },
     {
-      "consistency_iou": 0.9572903225806452,
-      "friction": 0.5,
-      "friction_source": "estimate",
-      "height_source": "estimate",
-      "id": "remote_2",
-      "mass_kg": 0.2022122707084854,
-      "mass_source": "estimate",
-      "name": "plastic remote",
-      "reconstruction_source": "primitive",
+      "id": "remote_control:1",
+      "name": "black remote control",
       "shape": "box",
       "size_m": [
-        0.16206526184082032,
-        0.0475322380065918,
-        0.025
-      ]
+        0.216,
+        0.0509,
+        0.018
+      ],
+      "graspable": true,
+      "material": "plastic",
+      "material_guess": "plastic",
+      "consistency_iou": 0.938
     },
     {
-      "consistency_iou": 0.9659090909090909,
-      "friction": 1.0,
-      "friction_source": "estimate",
-      "height_source": "estimate",
-      "id": "ball",
-      "mass_kg": 0.0737345162728751,
-      "mass_source": "estimate",
-      "name": "rubber ball",
-      "reconstruction_source": "primitive",
+      "id": "ballpoint_pen:0",
+      "name": "blue ballpoint pen",
+      "shape": "horizontal_cylinder",
+      "size_m": [
+        0.147,
+        0.0139,
+        0.0139
+      ],
+      "graspable": true,
+      "material": "plastic",
+      "material_guess": "plastic",
+      "consistency_iou": 0.915
+    },
+    {
+      "id": "lemon:0",
+      "name": "yellow ball",
       "shape": "sphere",
       "size_m": [
-        0.05039953265404997,
-        0.05039953265404997,
-        0.05039953265404997
-      ]
-    },
-    {
-      "consistency_iou": 0.9013854930725347,
-      "friction": 0.5,
-      "friction_source": "estimate",
-      "height_source": "estimate",
-      "id": "marker_1",
-      "mass_kg": 0.0339504452964933,
-      "mass_source": "estimate",
-      "name": "plastic marker",
-      "reconstruction_source": "primitive",
-      "shape": "horizontal_cylinder",
-      "size_m": [
-        0.1419296875,
-        0.01703125,
-        0.01703125
-      ]
-    },
-    {
-      "consistency_iou": 0.9130966952264382,
-      "friction": 0.5,
-      "friction_source": "estimate",
-      "height_source": "estimate",
-      "id": "marker_2",
-      "mass_kg": 0.03483351852343298,
-      "mass_source": "estimate",
-      "name": "plastic marker",
-      "reconstruction_source": "primitive",
-      "shape": "horizontal_cylinder",
-      "size_m": [
-        0.1411207733154297,
-        0.017300697326660158,
-        0.017300697326660158
-      ]
+        0.0744,
+        0.0744,
+        0.0744
+      ],
+      "graspable": true,
+      "material": "rubber",
+      "material_guess": "rubber",
+      "consistency_iou": 0.958
     }
   ],
   "rounds": [
@@ -679,13 +647,13 @@
     }
   ],
   "scale": {
-    "independent_error": 0.002507040529839729,
-    "source": "paper_homography",
+    "source": "reference_homography",
     "validation": {
-      "aspect_ratio_error": 0.0002644009480050613,
-      "paper_area_error": 0.0013078562927505422,
-      "scene_origin_x": 0.2684993539005518,
-      "scene_origin_y": 0.33670205110684037
+      "aspect_ratio_error": 0.0179,
+      "reference_area_error": 0.0337,
+      "reference_elevation_m": 0.0235,
+      "reference_height_m": 0.255,
+      "reference_width_m": 0.357
     }
   },
   "scene_hash": "172590cd5ea11a14999373ef9b09c1f85dfd52bcdc2fe084f79e9d3333f546e3",
