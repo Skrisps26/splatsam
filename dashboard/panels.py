@@ -10,7 +10,6 @@ from pathlib import Path
 
 import plotly.graph_objects as go
 import streamlit as st
-import streamlit.components.v1 as components
 
 COLORS = {"accent": "#aaa2ff", "mint": "#68e6c4", "muted": "#a6b2c7", "error": "#ff8e9d"}
 FAILURES = {
@@ -136,7 +135,7 @@ def render_tuning(run: Path, report: dict, media: dict, state: dict, position: f
             ) or file(run, "grasp.mp4")
             label = "Saved final-planner demonstration · synthetic scenario 0"
         else:
-            clip = file(run, paired.get("baseline"))
+            clip = file(run, mapping(paired.get("baseline")).get("path"))
             label = f"Saved baseline demonstration · synthetic scenario {paired.get('seed', '—')}"
         if not clip:
             clip = file(run, "grasp.mp4")
@@ -231,7 +230,7 @@ def render_tuning(run: Path, report: dict, media: dict, state: dict, position: f
             fig.update_xaxes(title="Proposal round", dtick=1)
             st.plotly_chart(
                 plot_style(fig),
-                use_container_width=True,
+                width="stretch",
                 config={"displayModeBar": False},
                 key="round_success",
             )
@@ -256,7 +255,7 @@ def render_tuning(run: Path, report: dict, media: dict, state: dict, position: f
             failures.update_xaxes(dtick=1)
             st.plotly_chart(
                 plot_style(failures, height=220),
-                use_container_width=True,
+                width="stretch",
                 config={"displayModeBar": False},
                 key="round_failures",
             )
@@ -276,11 +275,13 @@ def render_tuning(run: Path, report: dict, media: dict, state: dict, position: f
             a, b = st.columns(2)
             with a:
                 show_video(
-                    file(run, paired.get("baseline")), f"Baseline · seed {paired.get('seed')} · failed"
+                    file(run, mapping(paired.get("baseline")).get("path")),
+                    f"Baseline · seed {paired.get('seed')} · failed",
                 )
             with b:
                 show_video(
-                    file(run, paired.get("final")), f"Final planner · seed {paired.get('seed')} · succeeded"
+                    file(run, mapping(paired.get("final")).get("path")),
+                    f"Final planner · seed {paired.get('seed')} · succeeded",
                 )
             st.caption(
                 paired.get(
@@ -343,10 +344,11 @@ def comparison_slider(before: Path | None, after: Path | None):
         st.info("Both comparison images have not been exported.")
         return
     a, b = image_uri(str(before), before.stat().st_mtime_ns), image_uri(str(after), after.stat().st_mtime_ns)
-    components.html(
+    st.iframe(
         f'''<style>*{{box-sizing:border-box}}body{{margin:0;background:#0d1625;color:#e7edfc;font:13px system-ui}}.compare{{position:relative;height:330px;border-radius:12px;overflow:hidden}}img{{position:absolute;width:100%;height:100%;object-fit:contain;background:#090e18}}#front{{clip-path:inset(0 50% 0 0)}}.labels{{position:absolute;inset:12px 12px auto;display:flex;justify-content:space-between}}.labels span{{background:#111b2de8;padding:6px 9px;border-radius:6px}}input{{width:calc(100% - 30px);margin:14px 15px;accent-color:#a99eff;min-height:26px}}input:focus-visible{{outline:3px solid #68e6c4;outline-offset:2px}}</style><div class="compare"><img src="{b}" alt="Estimated physics scene"><img id="front" src="{a}" alt="Recorded source frame"><div class="labels"><span>Recorded frame</span><span>Estimated simulation</span></div></div><label for="wipe" style="position:absolute;left:-10000px">Compare recorded frame and estimated simulation</label><input id="wipe" type="range" min="0" max="100" value="50" aria-label="Comparison slider"><script>document.getElementById('wipe').addEventListener('input',function(){{document.getElementById('front').style.clipPath='inset(0 '+(100-this.value)+'% 0 0)'}})</script>''',
         height=395,
-        scrolling=False,
+        tab_index=0,
+        alt="Recorded source and estimated simulation comparison",
     )
     st.caption(
         "Drag or use arrow keys. The views use different cameras; this is a visual comparison, not pixel registration."
@@ -367,7 +369,9 @@ def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: flo
     )
     candidates = [f for f in frames if f.get("stage") == stage and f.get("kind") == "image"]
     if stage == "track":
-        count = len(items(state.get("objects")))
+        track_elapsed = number(mapping(stages.get("track")).get("duration_s")) or 0
+        track_total = number(mapping(state.get("stage_durations")).get("track")) or 1
+        count = 1 + int(track_elapsed / max(track_total, 0.001) * len(candidates))
         selected = candidates[min(max(count - 1, 0), len(candidates) - 1)] if candidates else {}
     elif stage == "build" and candidates:
         duration = number(mapping(stages.get("build")).get("duration_s")) or 0
@@ -430,7 +434,7 @@ def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: flo
                     }
                 )
             if rows:
-                st.dataframe(rows, hide_index=True, use_container_width=True)
+                st.dataframe(rows, hide_index=True, width="stretch")
             st.caption(
                 "Visual consistency measures footprint appearance only—not mass, height, friction or physical accuracy."
             )
@@ -453,9 +457,10 @@ def render_final(run: Path, report: dict, state: dict):
     values = [number(baseline.get("success_rate")), number(selected.get("success_rate"))]
     if all(v is not None for v in values):
         data = json.dumps([v * 100 for v in values])
-        components.html(
+        st.iframe(
             f'''<style>body{{margin:0;font-family:system-ui;color:#edf3ff;background:transparent}}.row{{display:flex;gap:24px;padding:14px 0}}.card{{flex:1;padding:20px;border-radius:12px;background:#111c2e}}small{{color:#b6c4dc}}strong{{display:block;font-size:44px;letter-spacing:-2px;margin-top:8px}}.final{{color:#78e5c5}}</style><div class="row"><div class="card"><small>Baseline · sealed test</small><strong id="b" aria-label="{values[0] * 100:.1f} percent">{values[0] * 100:.1f}%</strong></div><div class="card"><small>Final · sealed test</small><strong class="final" id="f" aria-label="{values[1] * 100:.1f} percent">{values[1] * 100:.1f}%</strong></div></div><script>const ends={data};if(!matchMedia('(prefers-reduced-motion: reduce)').matches){{const start=performance.now();function draw(t){{const p=Math.min((t-start)/850,1);['b','f'].forEach((id,i)=>document.getElementById(id).textContent=(ends[i]*(1-Math.pow(1-p,3))).toFixed(1)+'%');if(p<1)requestAnimationFrame(draw)}}requestAnimationFrame(draw)}}</script>''',
             height=155,
+            alt="Baseline and final sealed test success rates",
         )
     fig = go.Figure()
     for name, row, color in (("Baseline", baseline, COLORS["accent"]), ("Final", selected, COLORS["mint"])):
@@ -484,7 +489,7 @@ def render_final(run: Path, report: dict, state: dict):
     fig.update_layout(showlegend=False)
     st.plotly_chart(
         plot_style(fig, height=200),
-        use_container_width=True,
+        width="stretch",
         config={"displayModeBar": False},
         key="sealed_ci",
     )
@@ -513,7 +518,7 @@ def render_final(run: Path, report: dict, state: dict):
                         path.read_bytes(),
                         file_name=f"splatsam-{name}",
                         mime=mime,
-                        use_container_width=True,
+                        width="stretch",
                     )
                 except OSError:
                     st.caption(f"{name} is not available.")
@@ -550,7 +555,8 @@ def render_autopsy(run: Path, media: dict, state: dict):
         pair = mapping(media.get("paired"))
         if row.get("seed") == pair.get("seed") and pair.get("status") == "available":
             show_video(
-                file(run, pair.get("baseline")), "Saved baseline clip for this synthetic training seed"
+                file(run, mapping(pair.get("baseline")).get("path")),
+                "Illustrative baseline clip for this seed; the selected cached planner variant was not recorded",
             )
         else:
             st.info(

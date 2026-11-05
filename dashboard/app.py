@@ -170,7 +170,7 @@ def render_upload(run: Path, media: dict) -> None:
         )
         left, right = st.columns([1, 1])
         with left:
-            if st.button("Use sample video", use_container_width=True):
+            if st.button("Use sample video", width="stretch"):
                 st.session_state.sample_selected = True
         with right:
             st.caption("12 seconds · six objects · A4 scale reference")
@@ -185,7 +185,7 @@ def render_upload(run: Path, media: dict) -> None:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 destination.write_bytes(uploaded.getbuffer())
                 st.success(f"Saved privately as {destination.name}. No inference started.")
-            st.button("Build my robot sandbox", type="primary", disabled=True, use_container_width=True)
+            st.button("Build my robot sandbox", type="primary", disabled=True, width="stretch")
             st.caption(
                 "Choose Use sample video to launch the replay. Live launch is hidden rather than bypassing privacy, calibration or sealed-test approvals."
             )
@@ -196,7 +196,7 @@ def render_upload(run: Path, media: dict) -> None:
             st.button(
                 "Build my robot sandbox",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 on_click=start_replay,
                 disabled=not bool(events_for(run)),
             )
@@ -211,16 +211,26 @@ def render_replay(run: Path, report: dict, media: dict, events: list[dict]) -> N
     offsets = {"Result": duration}
     chapter_stages = {"track": "Masks", "scale": "Scale", "build": "Physics", "tune": "Tuning"}
     round_times = []
+    stage_starts = {}
+    stage_durations = {}
     for event, timestamp in zip(events, times, strict=True):
         if event.get("type") == "stage_started":
+            stage_starts[event.get("payload", {}).get("stage")] = timestamp
             chapter = chapter_stages.get(event.get("payload", {}).get("stage"))
             if chapter:
                 offsets[chapter] = min(timestamp + 2, duration)
+        elif event.get("type") == "stage_finished":
+            stage = event.get("payload", {}).get("stage")
+            if stage in stage_starts:
+                stage_durations[stage] = max(0.0, timestamp - stage_starts[stage])
+        elif event.get("type") == "scene_built":
+            offsets["Physics"] = min(timestamp + 0.1, duration)
         elif event.get("type") == "round_finished":
             round_times.append(timestamp)
     if round_times:
         offsets["Tuning"] = round_times[max(0, len(round_times) - 2)] + 0.1
     st.session_state.chapter_offsets = offsets
+    state["stage_durations"] = stage_durations
     cost = state.get("cost_usd") or {}
     recorded_cost = cost.get("meta_usd")
     if recorded_cost is None and state.get("llm_calls"):
@@ -238,12 +248,12 @@ def render_replay(run: Path, report: dict, media: dict, events: list[dict]) -> N
     controls = st.columns([1, 1, 3])
     with controls[0]:
         if position >= duration:
-            st.button("Restart", on_click=start_replay, use_container_width=True)
+            st.button("Restart", on_click=start_replay, width="stretch")
         else:
             st.button(
                 "Pause" if st.session_state.get("replay_playing") else "Resume",
                 on_click=pause_or_resume,
-                use_container_width=True,
+                width="stretch",
             )
     with controls[1]:
         st.selectbox(
@@ -334,7 +344,7 @@ def main() -> None:
         with right:
             preview = asset(run, "presentation/scene_upright.png") or asset(run, "sim.png")
             if preview:
-                st.image(str(preview), use_container_width=True)
+                st.image(str(preview), width="stretch")
         render_upload(run, media)
     else:
         if not events:
