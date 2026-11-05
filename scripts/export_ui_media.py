@@ -142,13 +142,19 @@ def _overlay_sequence(
 
 
 def _reference_outline(
-    source: np.ndarray, paper_track: dict[str, Any], frame_index: int, reference: dict[str, Any]
+    source: np.ndarray,
+    reference_track: dict[str, Any],
+    frame_index: int,
+    reference: dict[str, Any],
+    *,
+    title: str = "Reference outline • scale locked",
+    subtitle: str | None = None,
 ) -> np.ndarray:
     output = source.copy()
-    mask = _mask(_frame_for_track(paper_track, frame_index)).astype(np.uint8) * 255
+    mask = _mask(_frame_for_track(reference_track, frame_index)).astype(np.uint8) * 255
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
-        raise ValueError("saved paper mask has no contour")
+        raise ValueError("saved reference mask has no contour")
     contour = max(contours, key=cv2.contourArea)
     epsilon = 0.02 * cv2.arcLength(contour, True)
     polygon = cv2.approxPolyDP(contour, epsilon, True)
@@ -171,8 +177,8 @@ def _reference_outline(
     )
     return _label(
         _resize(output),
-        "Reference outline • scale locked",
-        f"Synthetic A4 reference sheet • {meters_per_pixel * 1000:.1f} mm / px",
+        title,
+        subtitle or f"Saved reference mask • {meters_per_pixel * 1000:.1f} mm / px",
     )
 
 
@@ -221,7 +227,13 @@ def _camera(azimuth: float, elevation: float, distance: float) -> mujoco.MjvCame
     return camera
 
 
-def _scene_media(scene: SceneSpec, scenario: ScenarioSpec) -> tuple[np.ndarray, list[np.ndarray]]:
+def _scene_media(
+    scene: SceneSpec,
+    scenario: ScenarioSpec,
+    *,
+    title: str = "Reconstructed primitive scene",
+    subtitle: str = "Upright SceneSpec render • synthetic geometry",
+) -> tuple[np.ndarray, list[np.ndarray]]:
     model = build_model(scene, scenario)
     data = mujoco.MjData(model)
     mujoco.mj_forward(model, data)
@@ -232,16 +244,8 @@ def _scene_media(scene: SceneSpec, scenario: ScenarioSpec) -> tuple[np.ndarray, 
         still = renderer.render().copy()
         for azimuth in np.linspace(8, 368, 48, endpoint=False):
             renderer.update_scene(data, camera=_camera(float(azimuth), -27, 0.88))
-            orbit_frames.append(
-                _label(
-                    renderer.render().copy(),
-                    "Reconstructed primitive scene",
-                    "Static SceneSpec render • no simulation steps",
-                )
-            )
-    return _label(
-        still, "Reconstructed primitive scene", "Upright SceneSpec render • synthetic geometry"
-    ), orbit_frames
+            orbit_frames.append(_label(renderer.render().copy(), title, subtitle))
+    return _label(still, title, subtitle), orbit_frames
 
 
 def _recorded_replay(scene: SceneSpec, scenario: ScenarioSpec, replay: dict[str, Any]) -> list[np.ndarray]:

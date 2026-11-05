@@ -52,6 +52,11 @@ def file(run: Path, relative) -> Path | None:
     return candidate if candidate.is_relative_to(run.resolve()) and candidate.is_file() else None
 
 
+def media_file(run: Path, media: dict, key: str, fallback: str | None = None) -> Path | None:
+    entry = mapping(mapping(media.get("assets")).get(key))
+    return file(run, entry.get("path")) or file(run, fallback)
+
+
 @st.cache_data(show_spinner=False)
 def image_uri(path: str, modified: int) -> str:
     del modified
@@ -111,8 +116,11 @@ def plot_style(fig, *, height=250):
     return fig
 
 
-def render_tuning(run: Path, report: dict, media: dict, state: dict, position: float):
+def render_tuning(run: Path, report: dict, media: dict, state: dict, position: float, context: dict):
     del position
+    clip_source = (
+        "recorded reconstruction" if context.get("source_mode") == "live" else "saved recorded example"
+    )
     rounds = [mapping(r) for r in items(state.get("rounds"))]
     section("The improvement loop", "Automatic parameter tuning · not a learned policy")
     left, right = st.columns([1.05, 1], gap="large")
@@ -123,48 +131,50 @@ def render_tuning(run: Path, report: dict, media: dict, state: dict, position: f
     round_asset = mapping(round_clips.get(visible_round)) if visible_round else {}
     total_accepted = sum(bool(r.get("accepted")) for r in items(report.get("rounds")))
     all_accepted_visible = bool(accepted_rounds) and len(accepted_rounds) >= total_accepted
+    selected_replay = mapping(mapping(media.get("assets")).get("selected_planner_replay"))
     with left:
-        if round_asset:
-            clip = file(run, round_asset.get("path"))
+        if context.get("source_mode") == "live" and selected_replay.get("status") == "ready":
+            clip = file(run, selected_replay.get("path"))
             label = (
-                f"Accepted round {visible_round} · recorded synthetic scenario {round_asset.get('seed', '—')}"
+                "Selected-planner training illustration · saved simulation clip "
+                "(not a sealed test or real robot)"
             )
+        elif round_asset:
+            clip = file(run, round_asset.get("path"))
+            label = f"Accepted round {visible_round} · {clip_source} scenario {round_asset.get('seed', '—')}"
         elif all_accepted_visible:
-            clip = file(
-                run, mapping(mapping(media.get("assets")).get("recorded_final_replay")).get("path")
-            ) or file(run, "grasp.mp4")
-            label = "Saved final-planner demonstration · synthetic scenario 0"
+            clip = media_file(run, media, "recorded_final_replay")
+            label = f"{clip_source.capitalize()} · selected-planner demonstration"
         else:
             clip = file(run, mapping(paired.get("baseline")).get("path"))
-            label = f"Saved baseline demonstration · synthetic scenario {paired.get('seed', '—')}"
-        if not clip:
-            clip = file(run, "grasp.mp4")
-            label = "Recorded final-planner example—not a live/current-round camera"
-        show_video(clip, label)
+            label = f"{clip_source.capitalize()} · baseline scenario {paired.get('seed', '—')}"
+        if clip:
+            show_video(clip, label)
+        else:
+            st.info("No saved demonstration clip is available for the recorded tuning evidence.")
         episodes = [mapping(e) for e in items(state.get("episodes")) if e.get("phase") == "tune"]
         section("Episode wall", "Saved evaluations, revealed as events arrive")
         latest = {}
         for episode in episodes:
             latest[episode.get("seed")] = episode
         display = list(latest.values())[:200]
+        slot_count = len(display)
         squares = []
-        for index in range(200):
-            episode = display[index] if index < len(display) else None
-            status = "success" if episode and episode.get("success") else "failure" if episode else "pending"
-            label = (
-                f"Seed {episode.get('seed')}: {'success' if episode.get('success') else episode.get('failure_mode')}"
-                if episode
-                else "Awaiting a recorded episode"
-            )
+        for episode in display:
+            status = "success" if episode.get("success") else "failure"
+            label = f"Seed {episode.get('seed')}: {'success' if episode.get('success') else episode.get('failure_mode')}"
             squares.append(
                 f'<span class="episode-cell {status}" title="{html.escape(label, quote=True)}"></span>'
             )
-        st.markdown(
-            '<div class="episode-wall" role="img" aria-label="Recorded episode outcome grid">'
-            + "".join(squares)
-            + '</div><div class="wall-legend"><span><i style="background:#58cfa8"></i>Success</span><span><i style="background:#df778c"></i>Failure</span><span>200 scenario slots</span></div>',
-            unsafe_allow_html=True,
-        )
+        if squares:
+            st.markdown(
+                '<div class="episode-wall" role="img" aria-label="Recorded episode outcome grid">'
+                + "".join(squares)
+                + f'</div><div class="wall-legend"><span><i style="background:#58cfa8"></i>Success</span><span><i style="background:#df778c"></i>Failure</span><span>{slot_count} recorded scenario slots</span></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.info("Recorded episode outcomes have not arrived in this replay.")
         st.caption(
             "Cached evaluations; planner-variant/round association was not recorded. The wall is not a new success-rate estimate."
         )
@@ -269,7 +279,7 @@ def render_tuning(run: Path, report: dict, media: dict, state: dict, position: f
         )
     if paired.get("status") == "available" and all_accepted_visible:
         with st.expander(
-            f"Baseline vs improved · same synthetic scenario {paired.get('seed')}",
+            f"Baseline vs selected planner · same scenario {paired.get('seed')}",
             expanded=bool(accepted_rounds),
         ):
             a, b = st.columns(2)
@@ -281,19 +291,19 @@ def render_tuning(run: Path, report: dict, media: dict, state: dict, position: f
             with b:
                 show_video(
                     file(run, mapping(paired.get("final")).get("path")),
-                    f"Final planner · seed {paired.get('seed')} · succeeded",
+                    f"Selected planner · seed {paired.get('seed')} · succeeded",
                 )
             st.caption(
                 paired.get(
                     "provenance",
-                    "Illustrative training-seed media recordings; not additional evaluation metrics.",
+                    "Saved training-scenario media recordings; not additional evaluation metrics.",
                 )
             )
     elif paired.get("status") == "available":
-        st.caption("Same-seed baseline/final comparison unlocks after the last recorded accepted edit.")
+        st.caption("Same-scenario comparison unlocks after the last recorded accepted edit.")
     else:
         st.caption(
-            "Same-seed baseline/improved comparison is unavailable: no recorded baseline trace was saved. No clip is invented."
+            "Same-scenario comparison is unavailable: no recorded baseline trace was saved. No clip is invented."
         )
     section("Improvement log", "Every proposal. Every rejection.")
     params = {}
@@ -355,7 +365,7 @@ def comparison_slider(before: Path | None, after: Path | None):
     )
 
 
-def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: float):
+def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: float, context: dict):
     section("A scene takes shape", "Recorded frames → masks → metric footprints → physics")
     stages = mapping(state.get("stages"))
     frames = [mapping(x) for x in items(media.get("reveal_frames"))]
@@ -383,7 +393,7 @@ def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: flo
     left, right = st.columns([1.8, 1], gap="large")
     with left:
         show_image(
-            file(run, selected.get("path")) or file(run, "source.png"),
+            file(run, selected.get("path")) or media_file(run, media, "original_frame", "source.png"),
             selected.get("label", "Recorded workspace"),
             height=400,
         )
@@ -402,18 +412,29 @@ def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: flo
                 unsafe_allow_html=True,
             )
         scale = mapping(stages.get("scale"))
+        reference = mapping(context.get("reference"))
+        reference_name = reference.get("name")
+        reference_source = reference.get("source")
         if scale.get("status") == "done":
-            st.markdown(
-                '<span class="badge success">Scale locked · A4 reference</span>', unsafe_allow_html=True
+            label = f"Scale locked · {reference_name}" if isinstance(reference_name, str) else "Scale locked"
+            st.markdown(f'<span class="badge success">{html.escape(label)}</span>', unsafe_allow_html=True)
+            detail = (
+                f"Metric scale from {reference_source}. Heights and physics remain estimates."
+                if isinstance(reference_source, str)
+                else "Metric scale comes from the saved reference. Heights and physics remain estimates."
             )
-            st.caption("Paper-derived metric scale. Heights and physics remain estimates.")
+            st.caption(detail)
     if state.get("scene"):
-        orbit = file(run, "presentation/scene_orbit.mp4")
+        orbit = media_file(run, media, "scene_orbit", "presentation/scene_orbit.mp4")
+        scene_source = (
+            "Recorded reconstruction" if context.get("source_mode") == "live" else "Saved recorded example"
+        )
         if orbit and 22 <= elapsed <= 32:
-            show_video(orbit, "Rendered orbit of the saved physics scene; no new simulation")
+            show_video(orbit, f"{scene_source} · rendered orbit of the saved physics scene")
         with st.expander("Compare input and simulation"):
             comparison_slider(
-                file(run, "source.png"), file(run, "presentation/scene_upright.png") or file(run, "sim.png")
+                media_file(run, media, "original_frame", "source.png"),
+                media_file(run, media, "scene_upright", "sim.png"),
             )
         with st.expander("Object estimates and visual consistency", expanded=stage == "scenarios"):
             rows = []
@@ -440,7 +461,7 @@ def render_scene(run: Path, report: dict, media: dict, state: dict, elapsed: flo
             )
 
 
-def render_final(run: Path, report: dict, state: dict):
+def render_final(run: Path, report: dict, state: dict, context: dict):
     final = mapping(state.get("final"))
     comparison = mapping(final.get("comparison"))
     baseline, selected = mapping(comparison.get("baseline")), mapping(comparison.get("final"))
@@ -493,8 +514,9 @@ def render_final(run: Path, report: dict, state: dict):
         config={"displayModeBar": False},
         key="sealed_ci",
     )
+    source = "Recorded reconstruction" if context.get("source_mode") == "live" else "Saved recorded example"
     st.caption(
-        f"{baseline.get('successes')}/{baseline.get('n')} baseline · {selected.get('successes')}/{selected.get('n')} final · paired gain {pct(comparison.get('gain'))}. Synthetic simulation illustration, not real-video results."
+        f"{baseline.get('successes')}/{baseline.get('n')} baseline · {selected.get('successes')}/{selected.get('n')} final · paired gain {pct(comparison.get('gain'))}. {source}; counts are copied from the saved final-test artifact."
     )
     seal = str(final.get("seal_hash", "Not recorded"))
     st.code(f"SEALED / RUN ONCE   sha256:{seal}", language=None)

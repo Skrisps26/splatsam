@@ -153,21 +153,94 @@ def _event(event_type: str, seconds: float, payload: dict[str, Any]) -> dict[str
     }
 
 
-def _stage_events(root: Path) -> list[dict[str, Any]]:
+def _origin(root: Path) -> str:
+    input_artifact = _load_json(root, "input.json")
+    source = input_artifact.get("source") if isinstance(input_artifact, dict) else None
+    return source if source in {"synthetic", "recorded", "live", "fallback"} else "synthetic"
+
+
+def _has_final_test(root: Path) -> bool:
+    return isinstance(_load_json(root, "final_test.json"), dict)
+
+
+_SNAPSHOT_ARTIFACTS = (
+    "input.json",
+    "objects.json",
+    "tracks.json",
+    "reference.json",
+    "scene.json",
+    "family.json",
+    "rounds.json",
+    "trajectory.jsonl",
+    "episode_cache/cache.db",
+    "final_test.json",
+    "report.json",
+)
+
+
+def _source_snapshot_hash(root: Path) -> str:
+    hasher = hashlib.sha256()
+    for relative in _SNAPSHOT_ARTIFACTS:
+        hasher.update(relative.encode("utf-8"))
+        source = _safe_source(root, relative)
+        if source is None:
+            hasher.update(b"\0missing\0")
+            continue
+        hasher.update(b"\0present\0")
+        with source.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def ensure_snapshot_compatible(run_dir: Path, destination: Path) -> str:
+    """Reject a mutable live snapshot instead of appending duplicate timed events."""
+    origin = _origin(run_dir)
+    snapshot = _source_snapshot_hash(run_dir)
+    if origin != "live":
+        return snapshot
+    manifest = _load_json(destination, "presentation.json")
+    events = destination / "events.jsonl"
+    has_events = events.is_file() and events.stat().st_size > 0
+    recorded = manifest.get("source_snapshot_sha256") if isinstance(manifest, dict) else None
+    if has_events and recorded != snapshot:
+        raise ValueError(
+            "live source artifacts changed since this presentation event snapshot; "
+            "preserve them in a separate presentation revision rather than appending mixed events"
+        )
+    return snapshot
+
+
+def _stage_events(root: Path, origin: str) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     captions = {
-        "understand": "Reading the recorded synthetic scene snapshot",
+        "understand": "Reading the recorded scene snapshot",
         "track": "Replaying persistent-object tracking evidence",
         "scale": "Applying the recorded reference-scale result",
         "build": "Building the recorded primitive scene",
-        "scenarios": "Loading the frozen synthetic scenario family",
+        "scenarios": "Loading the frozen scenario family",
         "tune": "Replaying validation-gated planner rounds",
-        "sealed": "Replaying the sealed synthetic final measurement",
+        "sealed": "Replaying the sealed final measurement",
     }
+    if origin == "live":
+        captions.update(
+            {
+                "understand": "Replaying a recorded live-video reconstruction",
+                "track": "Replaying saved live persistent-object tracking evidence",
+                "scale": "Applying the saved live reference-scale result",
+                "build": "Building the saved video-derived primitive scene",
+                "scenarios": "Loading the frozen live-scene scenario family",
+                "tune": "Replaying recorded validation-gated planner rounds",
+            }
+        )
     for stage in STAGES:
+        if stage == "sealed" and origin == "live" and not _has_final_test(root):
+            continue
         artifact_path = STAGE_ARTIFACTS[stage]
         start, finish = STAGE_SCHEDULE[stage]
         available = _safe_source(root, artifact_path) is not None
+        if not available and origin == "live":
+            continue
         if not available:
             events.append(
                 _event(
@@ -332,7 +405,9 @@ def _final_events(root: Path) -> list[dict[str, Any]]:
     return events
 
 
-def _presentation_manifest(run_dir: Path, destination: Path) -> dict[str, Any]:
+def _presentation_manifest(
+    run_dir: Path, destination: Path, origin: str, source_snapshot_sha256: str
+) -> dict[str, Any]:
     artifacts: dict[str, dict[str, Any]] = {}
     for stage, relative in STAGE_ARTIFACTS.items():
         artifacts[stage] = {
@@ -340,9 +415,10 @@ def _presentation_manifest(run_dir: Path, destination: Path) -> dict[str, Any]:
             "available_in_source": _safe_source(run_dir, relative) is not None,
             "available_in_bundle": _safe_source(destination, relative) is not None,
         }
-    return {
+    manifest = {
         "schema_version": 1,
-        "origin": "synthetic",
+        "origin": origin,
+        "source_mode": origin,
         "provenance": "snapshot-derived replay; no original stage timing was recorded",
         "timestamp_basis": "presentation_paced_from_snapshot",
         "replay_duration_s": 75,
@@ -350,6 +426,9 @@ def _presentation_manifest(run_dir: Path, destination: Path) -> dict[str, Any]:
         "source_run": run_dir.name,
         "artifacts": artifacts,
     }
+    if origin == "live":
+        manifest["source_snapshot_sha256"] = source_snapshot_sha256
+    return manifest
 
 
 def export_events(run_dir: Path, destination: Path) -> int:
@@ -357,10 +436,16 @@ def export_events(run_dir: Path, destination: Path) -> int:
     destination = destination.resolve()
     if not run_dir.is_dir():
         raise ValueError(f"run directory does not exist: {run_dir}")
+    origin = _origin(run_dir)
+    if origin == "live":
+        private_runs = (Path(__file__).resolve().parents[1] / "runs").resolve()
+        if not run_dir.is_relative_to(private_runs) or not destination.is_relative_to(run_dir):
+            raise ValueError("live presentation events must stay inside their corresponding private run")
     destination.mkdir(parents=True, exist_ok=True)
+    source_snapshot_sha256 = ensure_snapshot_compatible(run_dir, destination)
 
     generated = (
-        _stage_events(run_dir)
+        _stage_events(run_dir, origin)
         + _object_events(run_dir)
         + _scene_event(run_dir)
         + _llm_events(run_dir)
@@ -392,7 +477,7 @@ def export_events(run_dir: Path, destination: Path) -> int:
                 handle.write("\n")
 
     manifest_path = destination / "presentation.json"
-    manifest = _presentation_manifest(run_dir, destination)
+    manifest = _presentation_manifest(run_dir, destination, origin, source_snapshot_sha256)
     encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n"
     if not manifest_path.exists() or manifest_path.read_text(encoding="utf-8") != encoded:
         manifest_path.write_text(encoded, encoding="utf-8")

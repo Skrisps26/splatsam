@@ -29,36 +29,39 @@ Open **http://127.0.0.1:8501**. The committed synthetic bundle is local, with ha
 
 Optional mesh decomposition: `uv sync --extra mesh` installs CoACD. Native primitives do not need it.
 
-## Offline replay experience
+## Recorded replay and private live evidence
 
-The product demo is a dark, desktop-to-mobile Streamlit replay: a lilac-to-mint SplatSAM title, glass-like evidence panels, a seven-stage stepper, progressive persistent-mask reveals, saved scene media, validation rounds, and the final sealed synthetic comparison. It is explicitly labeled **“Replaying a recorded run.”** The timeline runs for 75 seconds by design; its event timestamps are presentation pacing reconstructed from an artifact snapshot, **not** measured stage latency.
+The product demo is a dark, desktop-to-mobile Streamlit viewer with a lilac-to-mint title, glass-like evidence panels, a seven-stage stepper, persistent-mask reveals, saved scene media, validation rounds, and recorded results where they exist. The bundled example is a **75-second presentation-paced synthetic replay** and is explicitly labeled **“Replaying a recorded run.”** Its timeline is derived from an artifact snapshot, not measured stage latency.
 
-Use **Use sample video** and **Build my robot sandbox** to start the recorded synthetic journey. During replay, Pause/Resume, 0.5×/1×/2×/4× speed, chapter pills, and the seek slider navigate saved events. Native tabs and expanders reveal tuning, scene evidence, failure records, saved-report/trajectory controls, and a keyboard-operable source/simulation comparison slider. No value is recomputed in the UI.
+Choose **Use bundled example** only to view that synthetic replay. An upload is previewed locally and its bytes are SHA-256 hashed. The dashboard opens a private live replay only when those exact bytes match a discovered `runs/*/input.json` live-video hash **and** the catalog can re-hash and verify that run's private source video under ignored `data/videos/`. The lookup is content-based; it has no filename, object-name, or run-name convention. An unmatched upload is never replaced with the bundled sample: it can only be saved privately for a later authorized run.
 
-The upload drop zone accepts an MP4 for local preview and optional private save under ignored `data/videos/`. It sends nothing to a model. The live-launch control is intentionally unavailable rather than bypassing privacy, calibration, and sealed-test approvals; choosing the sample starts only the recorded synthetic replay.
-
-The prior evidence-notebook surface remains available for comparison:
-
-```sh
-uv run streamlit run dashboard/app_legacy.py -- --run-dir demo_data
-```
+Real-mode copy calls the evidence **recorded** and labels simulator renders as a video-derived simulation, not robot footage. It does not use sample labels. The same recorded/replay and simulation limits remain visible; matching a video does not authorize inference, alter a seal, or create a final result.
 
 ### Presentation exporters
 
-`make export-ui RUN_DIR=runs/synth-demo` is output-only. It invokes:
+The synthetic exporter remains output-only:
+
+```sh
+make export-ui RUN_DIR=runs/synth-demo
+```
+
+It invokes:
 
 ```sh
 uv run python scripts/export_ui_media.py --run-dir runs/synth-demo --bundle runs/synth-demo
 uv run python scripts/export_ui_events.py --run-dir runs/synth-demo --destination runs/synth-demo
 ```
 
-The media exporter only derives the default presentation assets from saved synthetic artifacts and saved state. To deliberately render the optional illustrative same-seed training comparison, use the explicit opt-in:
+For an existing private live B1/B2 run, use the separate real exporter:
 
 ```sh
-uv run python scripts/export_ui_media.py --run-dir runs/synth-demo --bundle runs/synth-demo --paired-training-replay
+uv run python scripts/export_real_ui.py --run-dir runs/<run>
+uv run python scripts/export_real_ui.py --run-dir runs/<run> --record-grasp --seed 0
 ```
 
-That seed-7 baseline-fails/final-succeeds clip is illustrative TRAIN media only. It is excluded from reports, the seal, and all published evaluation metrics. See [the UI artifact inventory](docs/ui_artifacts.md) for every bundled class and provenance.
+It verifies the live `input.json` source, digest, and private video before copying saved source/track/scene evidence into `runs/<run>/presentation/`, including `media.json`; it writes the private `runs/<run>/presentation.json` and `events.jsonl` alongside the run. Without `--record-grasp`, it exports static saved-artifact media only. With `--record-grasp --seed 0` (the seed defaults to `0` and accepts `0..9999`), it records an illustrative scenario from saved frozen `family.json`, live `scene.json`, and `final_params.json` as `presentation/selected_planner_replay.mp4`, marked excluded from evaluation. Missing saved inputs create missing metadata, never a synthetic fallback. Neither command publishes raw video or runs a final test. A live presentation snapshot is immutable: if its source artifacts change after events exist, export refuses to mix them into that event stream. Preserve a separate presentation revision instead.
+
+The synthetic seed-7 baseline/final clip remains illustrative TRAIN media only. It is excluded from reports, the seal, and all published evaluation metrics. See [the UI artifact inventory](docs/ui_artifacts.md) for origins, private paths, and limits.
 
 ## Current evidence: synthetic illustration only
 
@@ -106,13 +109,20 @@ The free hand is dynamically welded to a gradually moved mocap target, so finger
 
 ## Mandatory Phase A / Phase B boundary
 
-Phase A builds and tests with synthetic data under `data_synth/`. It never processes real video, creates a real seal, runs the real final test, or provisions GPU resources. It stops at readiness. **Plan approval and synthetic success are not the live `go`.**
+Phase A builds and tests with synthetic data under `data_synth/`. It never processes real video, creates a real seal, runs the real final test, or provisions GPU resources. **Plan approval and synthetic success are not the live `go`.**
 
 ### Live prerequisites and confirmations
 
 1. Supply `MODEL_API_KEY` through the environment or ignored `.env`, never chat or the repo. The small synthetic format spike has passed; rerunning it is opt-in (`uv run --env-file .env python scripts/spike_api.py --max-usd 10`). [API notes](docs/api_notes.md) contain observed request formats, fixture and usage evidence.
 2. Say **go**, confirm the real video is ready in ignored `data/videos/`, and confirm it contains no personal documents, screens, mail or ID cards. B1 binds authorization to its SHA256 and produces overlays/scene only. **User mask approval is required before B2.**
-3. Confirm B2 inputs: freeze the scene/family, seal fresh `data/splits/`, run baseline and train/validation improvement. No real held-out outcomes are read here.
+3. Confirm B2 inputs: freeze the scene/family, seal fresh `data/splits/`, run baseline and train/validation improvement. No real held-out outcomes are read here. If an authorized B2 run must continue, use:
+
+   ```sh
+   uv run --env-file .env python scripts/resume_live_loop.py \
+     --run-dir runs/<run> --max-total-rounds 8
+   ```
+
+   The continuation preserves the frozen seal inputs and immutable prior history (including the three preserved rejected fallback rounds), adds at most five rounds, stops after three new consecutive rejections, and does not read held-out outcomes. It refuses a started or completed real final test; B4 remains separately confirmed and one-shot.
 4. B3 is optional and additionally spend-approved. Runpod account access was verified read-only; resource creation/cleanup and actual SAM 3D inference remain unexercised. The selected live path uses CPU primitives with no GPU spending.
 5. Confirm B4 final inputs: run the real baseline/final sealed comparison **exactly once**. `results/FINAL_TEST.started` is exclusive and remains after an interruption; the real evaluator refuses a second attempt, including with a different run ID.
 
@@ -129,7 +139,7 @@ An operator records the user's actual confirmations in ignored `data/authorizati
 }
 ```
 
-Only after those real confirmations, the operator uses `uv run python scripts/run_pipeline.py --mode live --action B1 --video data/videos/desk.mp4 --run-id real-scene` and later the separately confirmed action. The dashboard cannot create authorization or run evaluations. Optional measured overrides go in ignored `data/measured.yaml`:
+Only after those real confirmations, the operator uses the generic live command with a private run path and a video below `data/videos/`; the dashboard cannot create authorization or run evaluations. Optional measured overrides go in ignored `data/measured.yaml`:
 
 ```yaml
 objects:

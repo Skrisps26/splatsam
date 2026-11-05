@@ -1,6 +1,6 @@
 ---
 name: Splatsam
-description: Offline synthetic-run replay for inspectable robotics evidence.
+description: Recorded synthetic and privately verified live-run viewer for inspectable robotics evidence.
 colors:
   bg: "#080d18"
   panel: "#101827"
@@ -53,7 +53,7 @@ components:
 
 **Creative North Star: "The Recorded Run Console"**
 
-Splatsam is a dark, cinematic product-demo replay—not a light evidence notebook. The page begins with an oversized gradient wordmark and a compact REPLAY/provenance bar, then makes one recorded synthetic experiment progressively inspectable. Technical density rises only as saved events arrive: stage progression, media, tuning, and the sealed result.
+Splatsam is a dark, cinematic recorded-run console—not a light evidence notebook. The page begins with an oversized gradient wordmark and a compact REPLAY/provenance bar, then makes either the bundled synthetic experiment or a privately verified live reconstruction progressively inspectable. Technical density rises only as saved events arrive: stage progression, media, tuning, and a result only when recorded.
 
 The visual authority comes from `dashboard/styles.css`, the Streamlit panels, and the observed captures: `docs/screenshots/03-stepper.png` through `07-final.png` show the current desktop sequence; `docs/screenshots/09-mobile.png` shows the current narrow layout. Review captures also exist at `.impeccable/review/desktop.png` and `mobile.png`. In the observed 390px viewport, document and main scroll width were both 390px; reduced-motion media behavior was also observed.
 
@@ -82,7 +82,7 @@ The palette separates recorded-system context from outcomes: cool lilac directs 
 - **Cool Foreground and Muted Text:** Evidence hierarchy, captions, and labels.
 - **Hairline Border:** Defines panels, cards, dividers, and the stepper without a heavy grid.
 
-**The Provenance Contrast Rule.** Do not hide synthetic/replay status in low-contrast decoration; the mode pill, labels, captions, and final-result disclaimer must remain legible against the midnight field.
+**The Provenance Contrast Rule.** Do not hide source mode or recorded/replay status in low-contrast decoration. The mode pill, labels, captions, and result disclaimer must remain legible against the midnight field; live evidence never inherits sample/synthetic labels.
 
 ## Typography
 
@@ -102,7 +102,7 @@ The palette separates recorded-system context from outcomes: cool lilac directs 
 
 ## Layout
 
-The main container is wide but bounded, with roomy desktop side padding and an intentional first viewport: brand/provenance, statement, saved scene preview, then local upload/sample choice. Replay controls sit above the seven-stage stepper and chapter pills; current evidence fills the main canvas, with tabs or expanders exposing secondary detail.
+The main container is wide but bounded, with roomy desktop side padding and an intentional first viewport: brand/provenance, statement, saved scene preview, then local upload/sample choice. An upload can open only an exact-byte-matched, locally re-verified private run; otherwise it remains its own preview and cannot become the bundled sample. Replay controls sit above the seven-stage stepper and chapter pills; current evidence fills the main canvas, with tabs or expanders exposing secondary detail.
 
 Desktop evidence uses paired columns for media and context, tuning and charts, or baseline/final clips. At `800px` and below, page padding tightens, the stepper becomes four columns, metrics compress, and the grid-based episode wall narrows from 25 to 20 cells. The observed 390px capture has no horizontal page overflow; media and controls remain within the viewport.
 
@@ -121,7 +121,7 @@ Panels use gentle 16px rounding; controls use a more compact 10px rounding; medi
 ### Buttons
 - **Shape:** Compact rounded rectangle with a minimum 44px height.
 - **Primary:** Lilac gradient action for starting/restarting the recorded replay.
-- **Secondary:** Dark bordered controls for pause/resume and the local sample/upload flow.
+- **Secondary:** Dark bordered controls for pause/resume and local upload or bundled-sample selection.
 - **Disabled:** Reduced opacity makes unavailable live launch clear without changing its meaning.
 - **Focus:** Mint 3px outline with offset; do not replace keyboard focus with a color-only state.
 
@@ -132,12 +132,12 @@ Panels use gentle 16px rounding; controls use a more compact 10px rounding; medi
 - **Signature use:** The final sealed-result card, upload well, metrics, trace panel, and empty state use the same dark-surface family.
 
 ### Inputs / Fields
-- **Upload:** Dark dashed, rounded drop zone with muted support copy; uploaded MP4s remain local.
+- **Upload:** Dark dashed, rounded drop zone with muted support copy; uploaded MP4s stay local. Exact byte matches may open recorded private evidence; unmatched uploads never display sample evidence as their result.
 - **Replay controls:** Native buttons, select box, pills, progress, and slider are visually skinned but retain Streamlit behavior.
 - **Comparison:** A minimal same-origin iframe contains a labeled range input; it is keyboard-operable and states that differently framed views are not pixel registration.
 
 ### Navigation
-- **Top bar:** Small product name, explicit “Replaying a recorded run” label, run identity/cost, and elapsed presentation time.
+- **Top bar:** Small product name, explicit recorded-run label, source mode, run identity/cost, and elapsed presentation time.
 - **Chapters:** Native pill control for Masks, Scale, Physics, Tuning, and Result.
 - **Detail disclosure:** Native tabs during progression and expanders after the final reveal preserve the story without hiding data permanently.
 
@@ -149,13 +149,14 @@ Panels use gentle 16px rounding; controls use a more compact 10px rounding; medi
 ## Do's and Don'ts
 
 ### Do:
-- **Do** lead the replay with its recorded/synthetic provenance and keep presentation pacing distinct from runtime.
+- **Do** lead every replay with its recorded source mode and keep presentation pacing distinct from runtime.
 - **Do** use the lilac-to-mint display gradient sparingly: the brand title and controlled high-value moments only.
 - **Do** keep focus outlines, captions, labels, and status text visible in the dark palette.
 - **Do** preserve the mobile reflow and reduced-motion override when extending a replay panel.
+- **Do** label live scene/grasp media as recorded/video-derived simulation, not real-robot footage.
 
 ### Don't:
 - **Don't** revert to the obsolete light evidence-notebook palette or a generic white Streamlit surface.
-- **Don't** make the replay look like a live job: unavailable Live launch remains visibly unavailable, not hidden behind optimistic copy.
+- **Don't** make a recorded replay look like a live job or make an unmatched upload look like the bundled sample.
 - **Don't** use presentation animation to imply measured pipeline latency or new computation.
-- **Don't** present source/simulation comparisons as calibrated pixel alignment or illustrative training clips as evaluation evidence.
+- **Don't** present source/simulation comparisons as calibrated pixel alignment, illustrative training clips as evaluation evidence, or missing live final results as zero.

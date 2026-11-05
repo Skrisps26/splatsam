@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import base64
-import hashlib
 import html
 import json
 import sys
@@ -24,11 +23,18 @@ if str(HERE) not in sys.path:
 
 from panels import model_legend, render_autopsy, render_final, render_scene, render_tuning
 from replay_data import event_seconds, load_events, project_state
+from run_catalog import (
+    RecordedRun,
+    catalog_signature,
+    discover_recorded_runs,
+    match_uploaded_video,
+    sha256_bytes,
+)
 
 STAGES = {
     "understand": "Understand scene",
     "track": "Track objects · sam-3.1",
-    "scale": "Measure scale · A4 sheet",
+    "scale": "Measure scale reference",
     "build": "Build physics world",
     "scenarios": "Generate scenarios",
     "tune": "Automatic tuning",
@@ -81,6 +87,56 @@ def events_for(run: Path) -> list[dict]:
         return []
 
 
+@st.cache_data(show_spinner=False)
+def cached_recorded_runs(root: str, signature: tuple[tuple[str, int, int], ...]) -> list[RecordedRun]:
+    del signature
+    return discover_recorded_runs(Path(root))
+
+
+def recorded_runs() -> list[RecordedRun]:
+    return cached_recorded_runs(str(ROOT), catalog_signature(ROOT))
+
+
+def presentation_context(presentation: dict, media: dict | None = None) -> dict:
+    metadata = presentation.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    media = media if isinstance(media, dict) else {}
+    media_metadata = media.get("metadata")
+    media_metadata = media_metadata if isinstance(media_metadata, dict) else {}
+    reference = presentation.get(
+        "reference",
+        metadata.get("reference", media.get("reference", media_metadata.get("reference", {}))),
+    )
+    return {
+        "source_mode": presentation.get(
+            "source_mode",
+            metadata.get(
+                "source_mode",
+                media.get(
+                    "source_mode",
+                    media_metadata.get("source_mode", presentation.get("origin", "recorded")),
+                ),
+            ),
+        ),
+        "reference": reference if isinstance(reference, dict) else {},
+        "timestamp_basis": presentation.get("timestamp_basis"),
+    }
+
+
+def source_label(context: dict) -> str:
+    return "Recorded reconstruction" if context.get("source_mode") == "live" else "Recorded example"
+
+
+def load_run(run: Path) -> tuple[dict, dict, dict, list[dict]]:
+    presentation = read_json(run / "presentation.json")
+    return (
+        read_json(run / "report.json"),
+        read_json(run / "presentation/media.json"),
+        presentation,
+        events_for(run),
+    )
+
+
 def asset(run: Path, relative: str | None) -> Path | None:
     if not isinstance(relative, str):
         return None
@@ -97,7 +153,8 @@ def replay_position() -> float:
     return max(0.0, offset)
 
 
-def start_replay() -> None:
+def start_replay(run_path: str) -> None:
+    st.session_state.replay_run = run_path
     st.session_state.replay_offset = 0.0
     st.session_state.replay_anchor = time.monotonic()
     st.session_state.replay_playing = True
@@ -156,54 +213,84 @@ def upload_changed() -> None:
     st.session_state.sample_selected = False
 
 
-def render_upload(run: Path, media: dict) -> None:
+def render_upload(sample_run: Path, records: list[RecordedRun]) -> str | None:
     with st.container(border=True):
         st.subheader("Start with a workspace")
-        st.caption("Drop in a phone video, or explore a complete recorded sandbox.")
+        st.caption("Match a previously processed video, or select the bundled example.")
         uploaded = st.file_uploader(
             "Workspace video",
             type=["mp4"],
             label_visibility="collapsed",
             key="workspace_upload",
             on_change=upload_changed,
-            help="MP4/H.264 recommended. Uploads stay local and are never sent to a model by this replay-only viewer.",
+            help="MP4/H.264 recommended. The viewer only compares local bytes and never starts a pipeline.",
         )
         left, right = st.columns([1, 1])
         with left:
-            if st.button("Use sample video", width="stretch"):
+            if st.button("Use bundled example", width="stretch"):
                 st.session_state.sample_selected = True
         with right:
-            st.caption("12 seconds · six objects · A4 scale reference")
-        if uploaded is not None and not st.session_state.get("sample_selected"):
-            st.video(uploaded.getvalue(), muted=True, width=360)
-            st.info(
-                "This upload is local only. Live execution is paused; its results are not replaced by the recorded sample."
-            )
-            if st.button("Save upload for a later live run"):
-                digest = hashlib.sha256(uploaded.getbuffer()).hexdigest()
-                destination = ROOT / "data/videos" / f"upload_{digest[:12]}.mp4"
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                destination.write_bytes(uploaded.getbuffer())
-                st.success(f"Saved privately as {destination.name}. No inference started.")
-            st.button("Build my robot sandbox", type="primary", disabled=True, width="stretch")
-            st.caption(
-                "Choose Use sample video to launch the replay. Live launch is hidden rather than bypassing privacy, calibration or sealed-test approvals."
-            )
-        else:
-            source = asset(run, "presentation/source.mp4")
-            if st.session_state.get("sample_selected") and source:
-                st.video(str(source), muted=True, width=360, alt="Unsegmented synthetic workspace input")
+            st.caption("Select an example only when you want its recorded replay.")
+
+        if st.session_state.get("sample_selected"):
+            source = asset(sample_run, "presentation/source.mp4")
+            if source:
+                st.video(str(source), muted=True, width=360, alt="Bundled example input")
+            ready = bool(events_for(sample_run))
             st.button(
                 "Build my robot sandbox",
                 type="primary",
                 width="stretch",
                 on_click=start_replay,
-                disabled=not bool(events_for(run)),
+                args=(str(sample_run),),
+                disabled=not ready,
             )
-            st.caption("Starts a recorded synthetic replay—not a new API or GPU run.")
+            if ready:
+                st.caption("Bundled synthetic example · recorded replay only; no pipeline run starts.")
+            else:
+                st.info("The bundled example is being prepared; its recorded presentation is not ready.")
+            return "synthetic"
+
+        if uploaded is None:
+            st.info("Choose a video to look up a recorded reconstruction, or select the bundled example.")
+            st.button("Build my robot sandbox", type="primary", disabled=True, width="stretch")
+            return None
+
+        upload_bytes = uploaded.getvalue()
+        match = match_uploaded_video(records, sha256_bytes(upload_bytes))
+        st.video(upload_bytes, muted=True, width=360)
+        if match is not None and match.has_presentation_events:
+            st.success("Recorded reconstruction found for these exact bytes.")
+            st.button(
+                "Build my robot sandbox",
+                type="primary",
+                width="stretch",
+                on_click=start_replay,
+                args=(str(match.path),),
+            )
+            st.caption("Opens saved reconstruction evidence. No pipeline or API call starts.")
+            return "live"
+        if match is not None:
+            st.info(
+                "This upload matches a verified reconstruction. Its presentation is still being prepared, so replay is unavailable."
+            )
+        else:
+            st.warning(
+                "No recorded reconstruction matches these exact bytes. This upload will not be replaced by an example."
+            )
+            if st.button("Save upload for a later authorized run"):
+                digest = sha256_bytes(upload_bytes)
+                destination = ROOT / "data/videos" / f"upload_{digest[:12]}.mp4"
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(upload_bytes)
+                st.success(f"Saved privately as {destination.name}. No inference started.")
+        st.button("Build my robot sandbox", type="primary", disabled=True, width="stretch")
+        st.caption("Preparation and authorization are required before a new reconstruction can be recorded.")
+        return None
 
 
-def render_replay(run: Path, report: dict, media: dict, events: list[dict]) -> None:
+def render_replay(run: Path, report: dict, media: dict, presentation: dict, events: list[dict]) -> None:
+    context = presentation_context(presentation, media)
     times = event_seconds(events)
     duration = max(times) if times else 75.0
     position = min(replay_position(), duration)
@@ -242,13 +329,13 @@ def render_replay(run: Path, report: dict, media: dict, events: list[dict]) -> N
         f"USD {recorded_cost:.4f}" if isinstance(recorded_cost, (int, float)) else "reported at reveal"
     )
     st.markdown(
-        f'<div class="topbar"><span class="brand-small">SplatSAM</span><span class="replay-label">Replaying a recorded run</span><div class="topbar-right"><span>{html.escape(run.name)}</span><span>Recorded Meta: {cost_text}</span><span>{position:04.1f}s / {duration:.0f}s</span></div></div>',
+        f'<div class="topbar"><span class="brand-small">SplatSAM</span><span class="replay-label">Replaying a recorded run</span><div class="topbar-right"><span>{html.escape(source_label(context))}</span><span>Recorded Meta: {cost_text}</span><span>{position:04.1f}s / {duration:.0f}s</span></div></div>',
         unsafe_allow_html=True,
     )
     controls = st.columns([1, 1, 3])
     with controls[0]:
         if position >= duration:
-            st.button("Restart", on_click=start_replay, width="stretch")
+            st.button("Restart", on_click=start_replay, args=(str(run),), width="stretch")
         else:
             st.button(
                 "Pause" if st.session_state.get("replay_playing") else "Resume",
@@ -275,31 +362,36 @@ def render_replay(run: Path, report: dict, media: dict, events: list[dict]) -> N
         label_visibility="collapsed",
     )
     render_stepper(state)
-    st.caption(
-        "Synthetic sample · mocked model responses · presentation-paced event timeline, not measured pipeline runtime."
-    )
+    if context.get("source_mode") == "synthetic":
+        st.caption("Bundled synthetic example · saved presentation timeline, not measured pipeline runtime.")
+    else:
+        st.caption("Saved presentation timeline; no pipeline or API call is started by this replay.")
     st.markdown(
         '<div class="live-caption"><span class="live-dot"></span>'
         + html.escape(state.get("caption") or "Ready to reveal the workspace")
         + "</div>",
         unsafe_allow_html=True,
     )
+    if context.get("source_mode") == "live" and not state.get("final"):
+        st.info(
+            "Completed recorded reconstruction and available tuning evidence are shown below. The sealed held-out test is pending and has not run."
+        )
     if state.get("final"):
-        render_final(run, report, state)
+        render_final(run, report, state, context)
         with st.expander("Revisit the improvement loop"):
-            render_tuning(run, report, media, state, position)
+            render_tuning(run, report, media, state, position, context)
         with st.expander("Inspect the reconstructed scene"):
-            render_scene(run, report, media, state, position)
+            render_scene(run, report, media, state, position, context)
     elif state.get("stages", {}).get("tune", {}).get("status") != "pending":
         tabs = st.tabs(["Improvement loop", "Scene evidence", "Failure autopsy"])
         with tabs[0]:
-            render_tuning(run, report, media, state, position)
+            render_tuning(run, report, media, state, position, context)
         with tabs[1]:
-            render_scene(run, report, media, state, position)
+            render_scene(run, report, media, state, position, context)
         with tabs[2]:
             render_autopsy(run, media, state)
     else:
-        render_scene(run, report, media, state, position)
+        render_scene(run, report, media, state, position, context)
     model_legend()
     with st.expander("Review a moment"):
         st.slider(
@@ -313,7 +405,7 @@ def render_replay(run: Path, report: dict, media: dict, events: list[dict]) -> N
     if position >= duration:
         st.session_state.replay_offset = duration
         st.session_state.replay_playing = False
-        st.button("Watch it again", on_click=start_replay, type="primary")
+        st.button("Watch it again", on_click=start_replay, args=(str(run),), type="primary")
 
 
 def main() -> None:
@@ -325,43 +417,67 @@ def main() -> None:
     parser.add_argument("--run-dir", default="demo_data")
     args, _ = parser.parse_known_args()
     requested = (ROOT / args.run_dir).resolve()
-    run = requested if (requested / "events.jsonl").exists() else ROOT / "demo_data"
-    report = read_json(run / "report.json")
-    media = read_json(run / "presentation/media.json")
-    events = events_for(run)
-    started = st.session_state.get("replay_started", False)
-    if not started:
+    sample_run = (
+        requested
+        if requested.is_relative_to(ROOT)
+        and read_json(requested / "presentation.json").get("origin") == "synthetic"
+        else ROOT / "demo_data"
+    )
+    records = recorded_runs()
+    if not st.session_state.get("replay_started", False):
         st.markdown(
-            '<div class="topbar"><span class="brand-small">SplatSAM</span><div class="topbar-right"><span class="mode-pill">REPLAY</span><span>Recorded synthetic workspace</span><span>No API key or GPU needed</span></div></div>',
+            '<div class="topbar"><span class="brand-small">SplatSAM</span><div class="topbar-right"><span class="mode-pill">REPLAY</span><span>Local artifact viewer</span><span>No pipeline run starts here</span></div></div>',
             unsafe_allow_html=True,
         )
         left, right = st.columns([1.15, 1], gap="large")
         with left:
             st.markdown(
-                '<div class="hero"><h1>SplatSAM</h1><p>Phone video in.<br>Physics sandbox out.</p><p class="hero-detail">A robot that gets measurably better—in this recorded synthetic experiment. Rule-based planning, transparent tuning, and an honest final test.</p></div>',
+                '<div class="hero"><h1>SplatSAM</h1><p>Phone video in.<br>Physics sandbox out.</p><p class="hero-detail">Inspect a recorded reconstruction with its saved masks, scene, and bounded tuning evidence.</p></div>',
                 unsafe_allow_html=True,
             )
         with right:
-            preview = asset(run, "presentation/scene_upright.png") or asset(run, "sim.png")
-            if preview:
-                st.image(str(preview), width="stretch")
-        render_upload(run, media)
-    else:
-        if not events:
-            st.warning(
-                "This run has no presentation event log. Choose the bundled sample or run scripts/export_ui_events.py on an existing artifact directory."
+            st.markdown(
+                '<div class="idle-visual" aria-label="Select a local video or recorded example"><div class="orbit"></div></div>',
+                unsafe_allow_html=True,
             )
-            return
+        render_upload(sample_run, records)
+        st.markdown(
+            '<div class="limits-strip">Simulation only. Rule-based grasp planner; floating gripper, no arm. Shapes, heights, mass, and friction remain estimates unless recorded otherwise. Sealed tests are shown only after saved final-test evidence exists.</div>',
+            unsafe_allow_html=True,
+        )
+        return
 
-        @st.fragment(run_every=0.5)
-        def replay_fragment():
-            render_replay(run, report, media, events)
+    allowed_runs = {sample_run.resolve(), *(record.path.resolve() for record in records)}
+    selected_value = st.session_state.get("replay_run")
+    selected = Path(selected_value).resolve() if isinstance(selected_value, str) else None
+    if selected not in allowed_runs:
+        st.session_state.replay_started = False
+        st.warning("The selected replay is no longer available. Choose a local video or recorded example.")
+        return
+    report, media, presentation, events = load_run(selected)
+    if not events:
+        st.warning(
+            "This recorded reconstruction is still being prepared; its presentation event log is not ready."
+        )
+        return
 
-        replay_fragment()
-    st.markdown(
-        '<div class="limits-strip">Simulation only. Rule-based grasp planner, tuned by model proposals. Floating gripper, no arm. Shapes are estimated from video. Test set sealed until the end. The bundled experiment uses synthetic inputs and mocked model responses.</div>',
-        unsafe_allow_html=True,
-    )
+    @st.fragment(run_every=0.5)
+    def replay_fragment():
+        render_replay(selected, report, media, presentation, events)
+
+    replay_fragment()
+    context = presentation_context(presentation, media)
+    if context.get("source_mode") == "live":
+        footer = (
+            "Simulation only. Recorded reconstruction; no live compute runs here. "
+            "Shapes and physical properties are estimates unless saved as measured."
+        )
+    else:
+        footer = (
+            "Simulation only. Rule-based grasp planner and floating gripper, with no arm. "
+            "Shapes and physical properties are estimates unless saved as measured."
+        )
+    st.markdown(f'<div class="limits-strip">{html.escape(footer)}</div>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

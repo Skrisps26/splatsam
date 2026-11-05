@@ -23,7 +23,7 @@ from splatsam.llm.schemas import CriticLabel, ObjectList, PlannerPatch, Scenario
 from splatsam.utils import ROOT, canonical, config, file_digest
 
 META_BASE_URL = "https://api.meta.ai/v1"
-MAX_OUTPUT_TOKENS = 2048
+MAX_OUTPUT_TOKENS = 8192
 MAX_INPUT_FALLBACK_TOKENS = 1_048_576
 REQUEST_TIMEOUT = httpx.Timeout(timeout=120.0, read=30.0)
 T = TypeVar("T", bound=BaseModel)
@@ -405,6 +405,7 @@ class ModelClient:
             "instructions": instructions,
             "input": input,
             "max_output_tokens": MAX_OUTPUT_TOKENS,
+            "reasoning": {"effort": "low"},
             "text": {
                 "format": {
                     "type": "json_schema",

@@ -104,3 +104,46 @@ def test_successful_generation_is_cached_but_invalid_response_is_not(tmp_path, m
         client.generate(ScenarioFamily, **(kwargs | {"input": "different", "stage": "family"}))
     assert len(calls) == 4
     assert client.last_provenance == "fallback"
+
+
+def test_completed_structured_patch_accepts_required_wire_nulls(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("MODEL_API_KEY", "test-not-a-real-key")
+    client = ModelClient(tmp_path / "run", budget=FakeBudget(), live=True)
+    monkeypatch.setattr(client, "_preflight_tokens", lambda payload: 100)
+    client._client = SimpleNamespace(
+        responses=SimpleNamespace(
+            create=lambda **_: SimpleNamespace(
+                status="completed",
+                output_text=json.dumps(
+                    {
+                        "schema_version": 1,
+                        "patch": {
+                            "grip_safety_factor": 1.4,
+                            "jaw_margin_m": None,
+                            "pregrasp_height_m": None,
+                            "approach_speed": None,
+                            "lift_speed": None,
+                            "n_yaw_candidates": None,
+                            "clearance_weight": None,
+                            "center_weight": None,
+                        },
+                        "reason": "increase safety factor",
+                    }
+                ),
+                usage=SimpleNamespace(input_tokens=100, output_tokens=24),
+            )
+        )
+    )
+
+    result = client.generate(
+        PlannerPatch,
+        model="muse-wonder-1.0",
+        instructions="bounded edits",
+        input="validation summary",
+        stage="proposal",
+    )
+
+    assert result.patch == {"grip_safety_factor": 1.4}
+    assert client.last_provenance == "live"

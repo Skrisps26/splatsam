@@ -1,64 +1,68 @@
 # UI artifact inventory
 
-The dashboard is a **presentation-only reader**. Native files remain the source of truth: the UI reads saved JSON/JSONL/media and does not recompute masks, scale, physics, scores, confidence intervals, or report metrics. All shipped figures below are from the synthetic run; no real final result exists.
+The dashboard is a **presentation-only reader**. Native files remain the source of truth: the UI reads saved JSON/JSONL/media and does not recompute masks, scale, physics, scores, confidence intervals, or report metrics. The publishable bundle is synthetic-only. A private live run may have recorded presentation artifacts, but it has no published held-out comparison unless the separately gated final artifact exists.
 
-## Origins and destinations
+## Origins, privacy, and lookup
 
 | Location | Role | What it contains |
 | --- | --- | --- |
-| `runs/synth-demo/` | Complete synthetic source run | Pipeline artifacts, raw saved masks/tracks, cache, report, final synthetic result, and exported presentation assets. |
-| `runs/synth-demo/presentation/` | Exported presentation layer | Source/mask/scale/scene/replay assets derived from the completed synthetic snapshot. |
-| `demo_data/` | Offline demo bundle | Sanitized report, final result, parameters, rounds, trajectory, seal, consistency assets, event log, and presentation assets copied for replay. It intentionally omits source-run `objects.json`, `tracks.json`, and `reference.json`. |
-| `runs/demo/` | `make demo` runtime copy | Complete cached bundle used by the local viewer; no inference or evaluation runs while it is made or viewed. |
+| `runs/synth-demo/` | Complete synthetic source run | Pipeline artifacts, report, final synthetic result, and exported presentation assets. |
+| `runs/synth-demo/presentation/` | Publishable synthetic presentation layer | Source/mask/scale/scene/replay assets derived from the completed synthetic snapshot. |
+| `demo_data/` | Offline demo bundle | Sanitized synthetic report, result, parameters, rounds, trajectory, seal, consistency assets, events, and presentation assets. It intentionally omits source-run perception inputs. |
+| `runs/<run>/input.json` | Private live identity record | A live source marker, authorized source path, and video SHA-256. It is discovered by digest, not by filename or run name. |
+| ignored `data/videos/` | Private live source storage | The original local video. The run catalog re-hashes it before offering its replay. |
+| `runs/<run>/presentation/` | Private live presentation layer | Copied authorized source video plus saved-mask/reference/scene media and `media.json`; it is never a demo bundle or publication target. |
+| `runs/<run>/presentation.json`, `runs/<run>/events.jsonl` | Private live replay manifest and paced events | Snapshot-derived replay metadata and append-only events. They do not represent measured pipeline timing. |
+| `runs/demo/` | `make demo` runtime copy | Complete cached synthetic bundle used by the local viewer; no inference or evaluation runs while it is made or viewed. |
+
+For an uploaded MP4, the dashboard hashes the uploaded bytes and considers only a discovered live `input.json` with the same SHA-256 **and** a still-verifiable private local source video. A match with no event log remains unavailable. An unmatched upload remains its own preview or private saved input; the UI **never** opens cached synthetic evidence as that upload's result.
 
 ## Media and visual evidence
 
-| Artifact class | Current paths | Provenance and limit |
+| Artifact class | Synthetic bundle | Private live run |
 | --- | --- | --- |
-| Source media | `presentation/source.mp4`, `presentation/original_frame.png`; older fallbacks `grasp.mp4`, `sim.png` | Saved synthetic source video is copied without re-encoding; the labeled frame is its saved working frame. Neither is real video. |
-| Persistent masks | `presentation/mask_reveal_01_paper.png` through `mask_reveal_06_marker_2.png` | Progressive overlays of saved persistent mock-perception masks: A4 sheet, two remotes, ball, two markers. They are display assets, not newly inferred masks. |
-| Reference and footprints | `presentation/reference_scale.png`, `presentation/observed_footprints.png` | Saved paper mask plus locked synthetic A4 homography; saved observed masks warped through that homography. It communicates the recorded scale result, not a new calibration. |
-| Reconstructed-scene media | `presentation/scene_upright.png`, `presentation/scene_orbit.mp4` | Existing `SceneSpec` and saved replay scenario rendered with `mujoco.mj_forward` only. The orbit is a static-scene render, not a new episode or a live camera. |
-| Recorded grasp replay | `presentation/recorded_final_replay.mp4` | Saved seed-0 final `qpos` trace. It is a replay of recorded state, not an evaluation rerun. |
-| Optional paired training illustration | `presentation/paired_training_baseline.mp4`, `paired_training_final.mp4`, and `paired_training_round_1.mp4`–`_round_3.mp4` in the current demo bundle | Explicit opt-in seed-7 TRAIN recordings from unchanged saved replay/cache inputs and saved planner parameters. Baseline fails; final succeeds. These clips are illustrative only—excluded from reports, the seal, and all evaluation metrics. |
-| Visual consistency | `consistency/*_observedmask.png`, `*_renderedbest.png`, `*_comparison.png`, `consistency/consistency.json` | Saved observed/rendered footprint comparisons and reported IoUs. They assess footprint appearance only, not height, mass, friction, collision geometry, or physical validity. |
+| Source media | `presentation/source.mp4`, `presentation/original_frame.png`; older fallbacks `grasp.mp4`, `sim.png` | `presentation/source.mp4`, `presentation/original_frame.png`, copied only after input digest/source verification. |
+| Persistent masks | `presentation/mask_reveal_*.png` from saved mock-perception tracks | `presentation/mask_reveal_*.png` from saved persistent live mask tracks. |
+| Reference and footprints | `presentation/reference_scale.png`, `presentation/observed_footprints.png` from the saved synthetic A4 homography | The same private paths from the saved live reference homography; they communicate recorded calibration, not a new measurement. |
+| Reconstructed-scene media | `presentation/scene_upright.png`, `presentation/scene_orbit.mp4`, rendered from saved state | The same private paths, rendered from the saved video-derived `SceneSpec`; static MuJoCo media is simulation, not real-robot footage. |
+| Recorded grasp replay | `presentation/recorded_final_replay.mp4` when saved in the synthetic snapshot | Optional `presentation/selected_planner_replay.mp4`; it is illustrative and explicitly excluded from evaluation. |
+| Visual consistency | `consistency/*_observedmask.png`, `*_renderedbest.png`, `*_comparison.png`, `consistency/consistency.json` | The analogous saved private artifacts when present. IoU assesses footprint appearance only—not height, mass, friction, collision geometry, or physical validity. |
 
-The source-run `frames/`, `tracks.json`, `objects.json`, `reference.json`, `accuracy.json`, `scene.json`, `replay_scenario.json`, and `replay_result.json` remain authoritative inputs to those exports. The bundled viewer tolerates their absence rather than substituting invented detail.
+The source-run `frames/`, `tracks.json`, `objects.json`, `reference.json`, `scene.json`, and saved report/round artifacts remain authoritative inputs to an export. Presentation media is derived from them; viewing never starts inference or evaluation.
 
 ## Report, tuning, and episode evidence
 
-| Artifact class | Current paths | Provenance and limit |
-| --- | --- | --- |
-| Synthetic report | `report.json`, `report.md` | Saved synthetic report. The UI displays the reported paired sealed comparison: baseline **69/200 (34.5%)** and final **95/200 (47.5%)**, using the original saved Wilson intervals. No statistic was regenerated for the UI. |
-| Final result and seal | `final_test.json`, `seal/SEALED.lock`, `seal/SEALED.manifest.json`, `seal/test.json` | Once-sealed synthetic comparison inputs/results. The real final-test path has not run. |
-| Planner state | `baseline_params.json`, `final_params.json`, `family.json`, `scene.json`, `loop.json`, `rounds.json` | Saved scenario/planner and bounded tuning evidence. Six rounds are recorded: three accepted, three rejected. Validation selected edits and remains optimistic. |
-| Sanitized trajectory | `trajectory.jsonl` | Saved provenance/call history safe for replay. The UI renders a trajectory control and model-activity trace; it is not an inference log generated by viewing. |
-| Episode cache | `episode_cache/cache.db` in the complete source run | Saved episode outcomes used only to reveal existing recorded events. Traces are stripped before an episode event is exported; planner-variant/round association is intentionally marked unavailable where it was not recorded. |
-| Completion/provenance | `completed.json`, `input.json`, `active_root.json`, `pilot.json`, `runtime.json` when present | Source-run completion and context records. They are not a claim that the browser executed the pipeline. |
+| Artifact class | Provenance and limit |
+| --- | --- |
+| Bundled synthetic report | `report.json` and `report.md` display the saved synthetic sealed comparison: baseline **69/200 (34.5%)** and final **95/200 (47.5%)**, using original Wilson intervals. These figures are specific to the bundled sample and are not regenerated by the UI. |
+| Final result and seal | The synthetic bundle includes `final_test.json`, `seal/SEALED.lock`, `seal/SEALED.manifest.json`, and `seal/test.json`. A real final artifact is absent until a separately authorized one-shot B4 run. |
+| Planner state | `baseline_params.json`, `final_params.json`, `family.json`, `scene.json`, `loop.json`, and `rounds.json` record saved bounded tuning history. Validation selection remains optimistic; no accepted real improvement is assumed. |
+| Sanitized trajectory | `trajectory.jsonl` is saved provenance/call history. The UI renders it; viewing does not generate inference activity. |
+| Episode cache | A complete source run can use `episode_cache/cache.db` only to reveal recorded events. Exported presentation evidence does not turn it into a new success-rate estimate. |
 
-## Presentation events and time
+## Presentation events and immutable snapshots
 
-`events.jsonl` is an append-only, idempotent presentation event stream. `presentation.json` declares a 75-second replay, synthetic origin, and `presentation_paced_from_snapshot` timestamp basis. Event timestamps are anchored at a presentation epoch solely to make relative progress deterministic.
+`events.jsonl` is an append-only, idempotent presentation event stream. `presentation.json` declares its source mode, a 75-second replay, and `presentation_paced_from_snapshot` timing. Those timestamps make replay deterministic; they are not latency, throughput, or stage-runtime measurements.
 
-The default schedule is: understand 0–4s, track 4.5–8.5s, scale 9–13s, build 13.5–17s, scenarios 17.5–21s, tuning 21.5–53s, sealed result 53.5–75s. These timings were **not** recorded from the original pipeline. They are presentation pacing reconstructed from available artifacts and must never be described as latency, throughput, or stage runtime.
+For a live run, the event manifest records a hash over its source snapshot. If source artifacts change after an event stream exists, the exporter rejects the refresh rather than append mixed evidence. Preserve a separate presentation revision; do not rewrite the existing snapshot in place.
 
 ## Export contract
+
+Synthetic export remains output-only:
 
 ```sh
 make export-ui RUN_DIR=runs/synth-demo
 ```
 
-This is output-only and requires an existing completed synthetic run. It calls:
+It uses the synthetic media and event exporters. The deliberate synthetic paired-training illustration remains a separate opt-in and is excluded from reports, seals, and metrics.
+
+Private actual-video presentation export is separate:
 
 ```sh
-uv run python scripts/export_ui_media.py --run-dir runs/synth-demo --bundle runs/synth-demo
-uv run python scripts/export_ui_events.py --run-dir runs/synth-demo --destination runs/synth-demo
+uv run python scripts/export_real_ui.py --run-dir runs/<run>
+uv run python scripts/export_real_ui.py --run-dir runs/<run> --record-grasp --seed 0
 ```
 
-By default the media exporter renders/copies only saved source artifacts and saved states. It does not execute an episode, score a planner, contact an API, or export real-video material. The additional paired training illustration requires an explicit command:
+Without `--record-grasp`, the real exporter produces only static saved-artifact media. With it, `--seed` (default `0`, valid `0..9999`) selects an illustrative scenario from the saved frozen `family.json`, saved live `scene.json`, and `final_params.json`, and writes H.264 faststart `presentation/selected_planner_replay.mp4`. That clip is marked `excluded_from_evaluation=true`; it is not a final-test run or a result. If the saved family or parameters are unavailable, export records missing media metadata and never substitutes synthetic media.
 
-```sh
-uv run python scripts/export_ui_media.py --run-dir runs/synth-demo --bundle runs/synth-demo --paired-training-replay
-```
-
-The event exporter appends only missing event IDs and rewrites `presentation.json` only when its snapshot manifest changes. Both exporters are safe for completed synthetic replay artifacts; neither authorizes or advances Phase B.
+The exporter verifies a live `input.json`, its source digest, and the local private video before copying media; it calls no model and never runs a final evaluation. Outputs stay under the ignored `runs/<run>/presentation/` directory plus that run's `presentation.json` and `events.jsonl`. No raw actual video is copied into `demo_data/` or made public.
