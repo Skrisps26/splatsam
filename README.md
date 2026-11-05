@@ -14,19 +14,51 @@ cd splatsam
 make setup && make demo
 ```
 
-Open **http://127.0.0.1:8501**. The 1.3 MB committed synthetic bundle is local, hash-verified, and requires **no API key, model weights or GPU**. Setup may download ordinary dependencies, not model weights. `STREAMLIT_SERVER_PORT=8502 make demo` changes the local port when necessary.
+Open **http://127.0.0.1:8501**. The committed synthetic bundle is local, with hash-verified core artifacts, and requires **no API key, model weights or GPU**. Setup may download ordinary dependencies, not model weights. The default example is a **75-second presentation-paced replay** of a completed synthetic run, not a live pipeline execution. `STREAMLIT_SERVER_PORT=8502 make demo` changes the local port when necessary.
 
 | Command | Behavior |
 | --- | --- |
 | `make setup` | Synchronize locked Python 3.12 dependencies; create ignored `data/videos/` |
 | `make test` | Behavioral tests, including actual MuJoCo grasps and renderer checks |
-| `make synth-demo` | Generate a synthetic video, reconstruct from mock segmentation, improve on train/validation, run a one-shot synthetic sealed test, write report |
-| `make demo` | Load verified cached artifacts and launch the read-only dashboard |
+| `make synth-demo` | Generate a synthetic video, reconstruct from mock segmentation, improve on train/validation, run a one-shot synthetic sealed test, write report, then export replay artifacts |
+| `make demo` | Copy the complete cached synthetic bundle to `runs/demo` and launch the offline replay viewer |
+| `make export-ui RUN_DIR=runs/synth-demo` | Export presentation media and append idempotent presentation events from an already complete synthetic run; it never runs pipeline, API, physics, or evaluation |
 | `make final-test RUN_DIR=... DATA_ROOT=...` | Explicit one-shot final evaluator; real input requires Phase B authorization |
 
 `make synth-demo` writes `runs/synth-demo/report.json` and `report.md`. Identical reruns verify and reuse outcomes instead of evaluating the sealed set again. Changed simulation/reconstruction inputs receive a separate synthetic revision; old evidence is retained. The real one-shot marker cannot be bypassed by changing a run ID.
 
 Optional mesh decomposition: `uv sync --extra mesh` installs CoACD. Native primitives do not need it.
+
+## Offline replay experience
+
+The product demo is a dark, desktop-to-mobile Streamlit replay: a lilac-to-mint SplatSAM title, glass-like evidence panels, a seven-stage stepper, progressive persistent-mask reveals, saved scene media, validation rounds, and the final sealed synthetic comparison. It is explicitly labeled **“Replaying a recorded run.”** The timeline runs for 75 seconds by design; its event timestamps are presentation pacing reconstructed from an artifact snapshot, **not** measured stage latency.
+
+Use **Use sample video** and **Build my robot sandbox** to start the recorded synthetic journey. During replay, Pause/Resume, 0.5×/1×/2×/4× speed, chapter pills, and the seek slider navigate saved events. Native tabs and expanders reveal tuning, scene evidence, failure records, saved-report/trajectory controls, and a keyboard-operable source/simulation comparison slider. No value is recomputed in the UI.
+
+The upload drop zone accepts an MP4 for local preview and optional private save under ignored `data/videos/`. It sends nothing to a model. The live-launch control is intentionally unavailable rather than bypassing privacy, calibration, and sealed-test approvals; choosing the sample starts only the recorded synthetic replay.
+
+The prior evidence-notebook surface remains available for comparison:
+
+```sh
+uv run streamlit run dashboard/app_legacy.py -- --run-dir demo_data
+```
+
+### Presentation exporters
+
+`make export-ui RUN_DIR=runs/synth-demo` is output-only. It invokes:
+
+```sh
+uv run python scripts/export_ui_media.py --run-dir runs/synth-demo --bundle runs/synth-demo
+uv run python scripts/export_ui_events.py --run-dir runs/synth-demo --destination runs/synth-demo
+```
+
+The media exporter only derives the default presentation assets from saved synthetic artifacts and saved state. To deliberately render the optional illustrative same-seed training comparison, use the explicit opt-in:
+
+```sh
+uv run python scripts/export_ui_media.py --run-dir runs/synth-demo --bundle runs/synth-demo --paired-training-replay
+```
+
+That seed-7 baseline-fails/final-succeeds clip is illustrative TRAIN media only. It is excluded from reports, the seal, and all published evaluation metrics. See [the UI artifact inventory](docs/ui_artifacts.md) for every bundled class and provenance.
 
 ## Current evidence: synthetic illustration only
 
@@ -132,6 +164,6 @@ Optional operator-assisted recovery uses ignored `data/perception.yaml`: `box_pr
 
 
 
-Library searches and implementation choices: [decisions](docs/decisions.md). Dashboard layout and observed surface checks: [design](DESIGN.md).
+Library searches and implementation choices: [decisions](docs/decisions.md). Replay design and observed desktop/mobile surface evidence: [design](DESIGN.md). Bundle contents, exporter contract, and provenance: [UI artifact inventory](docs/ui_artifacts.md).
 
 Measured offline checks, unresolved prerequisites, spend estimates and the exact gated live sequence: [Phase A readiness](docs/readiness.md).

@@ -1148,7 +1148,7 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6" },
     { name = "scipy", specifier = ">=1.15" },
     { name = "statsmodels", specifier = ">=0.14" },
-    { name = "streamlit", specifier = ">=1.45" },
+    { name = "streamlit", specifier = ">=1.66.1" },
     { name = "tenacity", specifier = ">=9" },
     { name = "trimesh", specifier = ">=4.6" },
     { name = "uvicorn", specifier = ">=0.34" },
